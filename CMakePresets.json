@@ -1,0 +1,25 @@
+{
+  "version": 8,
+  "configurePresets": [
+    {
+      "name": "linux-debug",
+      "generator": "Unix Makefiles",
+      "binaryDir": "/tmp/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_VERBOSE_MAKEFILE" : "ON",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "linux-release",
+      "generator": "Unix Makefiles",
+      "binaryDir": "/tmp/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_VERBOSE_MAKEFILE" : "ON",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    }
+  ]
+}

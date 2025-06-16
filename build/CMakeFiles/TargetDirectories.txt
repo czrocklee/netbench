@@ -1,0 +1,7 @@
+/home/rocklee/dev/uring/build/CMakeFiles/asio_client.dir
+/home/rocklee/dev/uring/build/CMakeFiles/asio_perf.dir
+/home/rocklee/dev/uring/build/CMakeFiles/asio_perf_test.dir
+/home/rocklee/dev/uring/build/CMakeFiles/echo.dir
+/home/rocklee/dev/uring/build/CMakeFiles/client.dir
+/home/rocklee/dev/uring/build/CMakeFiles/edit_cache.dir
+/home/rocklee/dev/uring/build/CMakeFiles/rebuild_cache.dir

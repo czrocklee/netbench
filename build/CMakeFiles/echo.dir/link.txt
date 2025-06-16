@@ -1,0 +1,1 @@
+/nix/store/0fsnicvfpf55nkza12cjnad0w84d6ba7-gcc-wrapper-14.2.1.20250322/bin/gcc -g -Wl,--dependency-file=CMakeFiles/echo.dir/link.d CMakeFiles/echo.dir/app/iouring/echo.c.o -o echo  -luring
