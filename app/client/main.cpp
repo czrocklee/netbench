@@ -25,7 +25,7 @@ int main(int argc, char** argv)
   std::cout << "Target address: " << address << std::endl;
   std::cout << "Connections: " << conns << std::endl;
   std::cout << "Senders per connection: " << senders << std::endl;
-  std::cout << "Messages per second per sender: " << msg_per_secs << std::endl;
+  std::cout << "Messages per second per sender: " << msgs_per_sec << std::endl;
   std::cout << "Message size: " << msg_size << " bytes" << std::endl;
 
   return 0;

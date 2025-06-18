@@ -15,111 +15,101 @@
 #include <unistd.h> // For close
 #include <netdb.h>  // For gethostbyname, h_errno, herror
 
-class sender
+class connection
 {
 public:
-  void connect();
-
-private:
-  int fd;
-};
-
-// Function to handle sending messages for a single connection
-void sender_worker(const std::string& host, int port, int msgs_per_sec, int msg_size, int conn_id)
-{
-  int sock_fd = -1;
-  struct sockaddr_in serv_addr;
-  std::vector<char> message_buffer(msg_size);
-  // Fill message_buffer with some data, e.g., 'A'
-  std::memset(message_buffer.data(), 'A', msg_size);
-
-  // Creating socket file descriptor
-  if ((sock_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+  void connection(int conn_id) : conn_id_{conn_id}
   {
-    std::cerr << "Connection " << conn_id << ": Socket creation error: " << strerror(errno) << std::endl;
-    return;
-  }
-
-  serv_addr.sin_family = AF_INET;
-  serv_addr.sin_port = htons(port);
-
-  // Convert IPv4 addresses from text to binary form
-  // Try inet_pton first for numeric IP addresses
-  if (inet_pton(AF_INET, host.c_str(), &serv_addr.sin_addr) <= 0)
-  {
-    // If inet_pton fails, it might be a hostname, try gethostbyname
-    struct hostent* he = gethostbyname(host.c_str());
-    if (he == nullptr)
+    if ((sock_fd_ = ::socket(AF_INET, SOCK_STREAM, 0)) < 0)
     {
-      // h_errno is the error code for gethostbyname failures. herror() prints a message.
-      std::cerr << "Connection " << conn_id << ": Host resolution failed for '" << host << "': ";
-      herror(nullptr); // Prints error message based on h_errno
-      close(sock_fd);
-      return;
+      std::cerr << "Connection " << conn_id_ << ": Socket creation error: " << ::strerror(errno) << std::endl;
+      std::terminate();
     }
-    // Assuming IPv4. he->h_addr_list[0] contains the first address.
-    memcpy(&serv_addr.sin_addr, he->h_addr_list[0], he->h_length);
   }
 
-  // Connecting to the server
-  if (connect(sock_fd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0)
+  void connect(const std::string& host, std::uint16_t port)
   {
-    std::cerr << "Connection " << conn_id << ": Connection Failed to " << host << ":" << port
-              << ". Error: " << strerror(errno) << std::endl;
-    close(sock_fd);
-    return;
-  }
-  std::cout << "Connection " << conn_id << ": Connected to " << host << ":" << port << std::endl;
+    ::sockaddr_in serv_addr;
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(port);
 
-  long long sleep_duration_us = 0;
-  if (msgs_per_sec > 0)
-  {
-    sleep_duration_us = static_cast<long long>(1000000.0 / msgs_per_sec);
-    if (sleep_duration_us < 0) sleep_duration_us = 0; // Should not happen with positive msgs_per_sec
-  }
-  else if (msgs_per_sec == 0)
-  { // Send as fast as possible
-    sleep_duration_us = 0;
-  }
-  else
-  {
-    std::cerr << "Connection " << conn_id << ": Invalid msgs_per_sec value: " << msgs_per_sec << ". Must be >= 0."
-              << std::endl;
-    close(sock_fd);
-    return;
-  }
+    if (::inet_pton(AF_INET, host.c_str(), &serv_addr.sin_addr) <= 0)
+    {
+      // If inet_pton fails, it might be a hostname, try gethostbyname
+      if (::hostent* he = ::gethostbyname(host.c_str()); he == nullptr)
+      {
+        // h_errno is the error code for gethostbyname failures. herror() prints a message.
+        std::cerr << "Connection " << conn_id_ << ": Host resolution failed for '" << host << "': ";
+        ::herror(nullptr);
+        std::terminate();
+      }
+      
+      std::memcpy(&serv_addr.sin_addr, he->h_addr_list[0], he->h_length);
+    }
 
-  if (msgs_per_sec > 0)
-  {
-    std::cout << "Connection " << conn_id << ": Sending " << msgs_per_sec << " msgs/sec, msg_size " << msg_size
-              << " bytes. Approx sleep per msg: " << sleep_duration_us << " us." << std::endl;
-  }
-  else
-  {
-    std::cout << "Connection " << conn_id << ": Sending at max speed, msg_size " << msg_size << " bytes." << std::endl;
+    if (::connect(sock_fd_, static_cast<sockaddr*>(&serv_addr), sizeof(serv_addr)) < 0)
+    {
+      std::cerr << "Connection " << conn_id_ << ": Connection Failed to " << host << ":" << port
+                << ". Error: " << ::strerror(errno) << std::endl;
+      std::terminate();    
+    }
   }
 
-  while (true)
+  void send(const char* data, std::size_t size)
   {
-    ssize_t bytes_sent = send(sock_fd, message_buffer.data(), message_buffer.size(), 0);
+    ssize_t bytes_sent = ::send(sock_fd_, data, size, 0);
+
     if (bytes_sent < 0)
     {
       std::cerr << "Connection " << conn_id << ": Send failed: " << strerror(errno) << std::endl;
-      break;
-    }
-    if (static_cast<size_t>(bytes_sent) != message_buffer.size())
-    {
-      std::cerr << "Connection " << conn_id << ": Partial send. Sent " << bytes_sent << " of " << message_buffer.size()
-                << " bytes." << std::endl;
-      // For a simple load tester, this might be an error condition to stop or log.
+      std::terminate();
     }
 
-    if (msgs_per_sec > 0 && sleep_duration_us > 0)
+    if (static_cast<std::size size_t>(bytes_sent) != size)
     {
-      std::this_thread::sleep_for(std::chrono::microseconds(sleep_duration_us));
+      std::cerr << "Connection " << conn_id << ": Partial send. Sent " << bytes_sent << " of " << size
+                << " bytes." << std::endl;
     }
   }
 
-  close(sock_fd);
-  std::cout << "Connection " << conn_id << ": Closed." << std::endl;
-}
+private:
+  int conn_id_;
+  int sock_fd_;
+};
+
+
+
+class sender
+{
+public:
+  sender(int msgs_per_sec) : conn_{0}
+  {}
+
+  void run(const std::string& host, std::uint16_t port, int msg_size)
+  {
+    conn_.connect(host, port);
+    _message.resize(msg_size, 'a');
+
+    _thread = std::jthread{[this, msgs_per_sec]
+      {
+        
+      
+
+      }};
+  }
+
+private:
+  /*
+  struct conn_data
+  {
+    connection conn_;
+    std::chrono::steady_clock::timepoint begin_time;
+    std::uint64_t msgs_sent = 0;
+  };*/
+
+
+  connection conn_;
+  std::vector<std::byte> message_;
+  std::jthread _thread;
+  std::chrono::steady_clock::time_point _startTime;
+};
