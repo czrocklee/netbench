@@ -4,7 +4,7 @@
     {
       "name": "linux-debug",
       "generator": "Unix Makefiles",
-      "binaryDir": "/tmp/build",
+      "binaryDir": "build",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_VERBOSE_MAKEFILE" : "ON",
@@ -14,7 +14,7 @@
     {
       "name": "linux-release",
       "generator": "Unix Makefiles",
-      "binaryDir": "/tmp/build",
+      "binaryDir": "build",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_VERBOSE_MAKEFILE" : "ON",

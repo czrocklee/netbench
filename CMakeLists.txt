@@ -8,6 +8,9 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -pedantic")
 find_package(CLI11 REQUIRED)
 
 # Define the executable targets and their sources
+add_executable(bsd_receiver app/bsd/receiver.cpp)
+
+
 add_executable(asio_client app/asio/asio_client.cpp)
 
 add_executable(asio_perf app/asio/asio_perf_test.cpp)

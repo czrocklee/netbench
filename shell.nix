@@ -35,6 +35,30 @@ let
     cmakeFlags = [ "-DHDR_HISTOGRAM_BUILD_PROGRAMS=OFF" ];
   };
 
+  liburing-lib = pkgs.stdenv.mkDerivation {
+    pname = "liburing";
+    version = "2.11"; # A specific version/tag from GitHub
+
+    # Fetch the source code directly from GitHub.
+    src = pkgs.fetchFromGitHub {
+      owner = "axboe";
+      repo = "liburing";
+      rev = "liburing-2.11"; # The git tag or commit hash to use
+      # This hash ensures the source code is what we expect.
+      # It's a security and reproducibility feature.
+      sha256 = "sha256-V73QP89WMrL2fkPRbo/TSkfO7GeDsCudlw2Ut5baDzA=";
+    };
+
+    # The library uses cmake, so we need it as a build tool.
+    # nativeBuildInputs = [ pkgs.cmake ];
+
+    # It also needs the zlib library to build its log support.
+    # buildInputs = [ pkgs.zlib ];
+
+    # We can pass flags to cmake, e.g., to disable building the example programs.
+    # cmakeFlags = [ "-DHDR_HISTOGRAM_BUILD_PROGRAMS=OFF" ];
+  };
+
 in 
   pkgs.mkShell {
     name = "cpp-dev-env";
@@ -44,10 +68,11 @@ in
       gcc
       gdb
       asio
-      liburing
+      #liburing
       mimalloc
       cli11
       hdrhistogram-c-lib
+      liburing-lib
     ];
     shellHook = ''
       echo "Using nixpkgs pinned to NixOS 25.05 (stable release)"
