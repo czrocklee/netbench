@@ -5,22 +5,23 @@
 
 namespace
 {
-  std::string pretty_print_uint(std::uint64_t value)
+  std::string pretty_print(double value)
   {
-    if (value < 1000)
+    if (std::abs(value) < 1000.0)
     {
-      // No suffix needed, just convert to string
-      return std::to_string(value);
+      std::stringstream ss;
+      ss << std::fixed << std::setprecision(1) << value;
+      return ss.str();
     }
 
-    const char* suffixes[] = {"k", "M", "G", "T", "P", "E"}; // Added Peta and Exa
-    int suffix_index = -1;
-    double temp_value = static_cast<double>(value);
+    const char* suffixes[] = {"", "k", "M", "G", "T"};
+    int suffix_index = 0;
+    double temp_value = value;
 
-    while (temp_value >= 1000.0 && suffix_index < 5)
+    while (std::abs(temp_value) >= 1000.0 && suffix_index < 4)
     {
       temp_value /= 1000.0;
-      suffix_index++;
+      ++suffix_index;
     }
 
     std::stringstream ss;
@@ -39,26 +40,24 @@ void metric_hud::run()
     std::this_thread::sleep_for(std::chrono::seconds(5));
 
     const auto metric = action_();
+
     const auto now = std::chrono::steady_clock::now();
-    const auto elapsed_time_millis = std::chrono::round<std::chrono::milliseconds>(now - start_time_).count();
-    const auto msg_rate = metric.msgs / elapsed_time_millis * 1000;
-    const auto throughput = metric.bytes / elapsed_time_millis * 1000;
+    const auto elapsed_time = std::chrono::duration<double>(now - start_time_).count();
+    const auto msg_rate = metric.msgs / elapsed_time;
+    const auto throughput = metric.bytes / elapsed_time;
 
     std::cout << msg_rate << " " << throughput << std::endl;
-    std::cout << "total rate\t: " << pretty_print_uint(msg_rate)
-              << " msgs/s, throughput: \t" << pretty_print_uint(throughput) << " bytes/s" << std::endl;
+    std::cout << "total rate\t: " << pretty_print(msg_rate) << " msgs/s, throughput: \t" << pretty_print(throughput)
+              << " bytes/s" << std::endl;
 
-    const auto elapsed_time_millis_since_last_check =
-      std::chrono::round<std::chrono::milliseconds>(now - last_time_checked_).count();
-    const auto msg_rate_since_last_check =
-      (metric.msgs - last_metric_.msgs) / elapsed_time_millis_since_last_check * 1000;
-    const auto throughput_since_last_check =
-      (metric.bytes - last_metric_.bytes) / elapsed_time_millis_since_last_check * 1000;
+    const auto elapsed_time_since_last_check = std::chrono::duration<double>(now - last_time_checked_).count();
+    const auto msg_rate_since_last_check = (metric.msgs - last_metric_.msgs) / elapsed_time_since_last_check;
+    const auto throughput_since_last_check = (metric.bytes - last_metric_.bytes) / elapsed_time_since_last_check;
 
-    std::cout << "current rate:\t" << pretty_print_uint(msg_rate_since_last_check)
-              << " msgs/s, throughput: \t" << pretty_print_uint(throughput_since_last_check) << " bytes/s" << std::endl;
+    std::cout << "current rate:\t" << pretty_print(msg_rate_since_last_check) << " msgs/s, throughput: \t"
+              << pretty_print(throughput_since_last_check) << " bytes/s" << std::endl;
 
     last_metric_ = metric;
-    last_time_checked_ = now; 
+    last_time_checked_ = now;
   }
 }

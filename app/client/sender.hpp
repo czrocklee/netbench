@@ -20,7 +20,6 @@
 #include <thread>
 #include <random>
 
-
 class sender
 {
 public:
@@ -38,9 +37,8 @@ public:
     for (auto& conn : conns_) { conn.connect(host, port); }
 
     static std::random_device rd;
-    const auto start_time_ =
-      std::chrono::steady_clock::now() +
-      std::chrono::nanoseconds{std::uniform_int_distribution<std::int64_t>{0, interval_.count()}(rd)};
+    start_time_ = std::chrono::steady_clock::now() +
+                  std::chrono::nanoseconds{std::uniform_int_distribution<std::int64_t>{0, interval_.count()}(rd)};
 
     _thread = std::jthread{[this] { run(); }};
   }
@@ -56,6 +54,7 @@ private:
     {
       const auto now = std::chrono::steady_clock::now();
       const auto expected_msgs = static_cast<std::uint64_t>((now - start_time_) / interval_);
+      //std::cout << interval_.count() << " " << (now - start_time_).count() << " " << expected_msgs << std::endl;
 
       if (msgs_sent_ < expected_msgs)
       {

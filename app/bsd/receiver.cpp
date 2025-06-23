@@ -11,7 +11,7 @@
 
 #define MAX_EVENTS 1024
 #define PORT 8080
-#define BUFFER_SIZE 1024
+#define BUFFER_SIZE 16
 
 // Function to set a file descriptor to non-blocking mode
 int make_socket_non_blocking(int sfd)

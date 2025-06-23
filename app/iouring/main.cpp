@@ -14,8 +14,7 @@
 
 // Configuration
 #define PORT 8080
-#define QUEUE_DEPTH 512
-#define BUFFER_SIZE 1024
+int BUFFER_SIZE;
 #define BUFFER_COUNT 2048
 #define BUFFER_GROUP_ID 0
 
@@ -55,9 +54,7 @@ int main(int argc, char** argv)
   std::string address;
   app.add_option("-a,--address", address, "Target address")->default_val("127.0.0.1:19004");
 
-
-  int buffer_size;
-  app.add_option("-z,--buffer-size", buffer_size, "Buffer size in bytes")->default_val(1024);
+  app.add_option("-b,--buffer-size", BUFFER_SIZE, "Buffer size in bytes")->default_val(1024);
 
   int uring_depth;
   app.add_option("-d,--uring-depth", uring_depth, "Queue depth of uring")->default_val(512);
@@ -76,7 +73,7 @@ int main(int argc, char** argv)
   }
 
   // 2. Initialize io_uring
-  if (io_uring_queue_init(QUEUE_DEPTH, &ring, 0) < 0)
+  if (io_uring_queue_init(uring_depth, &ring, 0) < 0)
   {
     perror("io_uring_queue_init");
     close(listen_fd);
