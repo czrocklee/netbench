@@ -1,3 +1,6 @@
+
+#include <CLI/CLI.hpp>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -45,8 +48,22 @@ typedef struct request_data
   char* buffers;
 } request_data_t;
 
-int main()
+int main(int argc, char** argv)
 {
+  CLI::App app{"TCP io_uring server"};
+
+  std::string address;
+  app.add_option("-a,--address", address, "Target address")->default_val("127.0.0.1:19004");
+
+
+  int buffer_size;
+  app.add_option("-z,--buffer-size", buffer_size, "Buffer size in bytes")->default_val(1024);
+
+  int uring_depth;
+  app.add_option("-d,--uring-depth", uring_depth, "Queue depth of uring")->default_val(512);
+
+  CLI11_PARSE(app, argc, argv);
+
   struct io_uring ring;
   char* buffers = NULL;
   struct io_uring_buf_ring* br = NULL;
@@ -67,7 +84,7 @@ int main()
   }
 
   // 3. Setup provided buffer pool
-  //setup_buffer_pool(&ring, &buffers, &br);
+  // setup_buffer_pool(&ring, &buffers, &br);
   printf("Buffer pool with %d buffers of %d bytes initialized.\n", BUFFER_COUNT, BUFFER_SIZE);
 
   // 4. Start accepting connections
@@ -259,7 +276,7 @@ static void setup_buffer_pool(struct io_uring* ring, char** buffers, struct io_u
   }
   io_uring_buf_ring_advance(*br, BUFFER_COUNT);
 
-    printf("Buffer pool %d with %d buffers of %d bytes initialized.\n", gid, BUFFER_COUNT, BUFFER_SIZE);
+  printf("Buffer pool %d with %d buffers of %d bytes initialized.\n", gid, BUFFER_COUNT, BUFFER_SIZE);
 }
 
 static void add_accept(struct io_uring* ring, int listen_fd)

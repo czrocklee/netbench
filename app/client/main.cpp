@@ -1,14 +1,17 @@
-#include <iostream>
-#include <CLI/CLI.hpp>
 #include "sender.hpp"
+#include "metric_hud.hpp"
+
+#include <CLI/CLI.hpp>
+
+#include <iostream>
 #include <deque>
 
 int main(int argc, char** argv)
 {
-  CLI::App app{"My Awesome App"};
+  CLI::App app{"TCP sender client"};
 
   std::string address;
-  app.add_option("-a,--address", address, "Target host")->required();
+  app.add_option("-a,--address", address, "Target address")->default_val("127.0.0.1:19004");
 
   int conns = 1;
   app.add_option("-c,--conns", conns, "Number of connections per sender")->default_val(1);
@@ -36,7 +39,7 @@ int main(int argc, char** argv)
   if (auto colon_pos = address.find(':'); colon_pos == std::string::npos)
   {
     host = address;
-    port = "19005"; // Default port if not specified
+    port = "19004"; // Default port if not specified
   }
   else
   {
@@ -46,11 +49,22 @@ int main(int argc, char** argv)
 
   auto ss = std::deque<sender>{};
 
-  for (auto i = 0; i < senders; ++i) { ss.emplace_back(msgs_per_sec); }
+  for (auto i = 0; i < senders; ++i) { ss.emplace_back(i, conns, msgs_per_sec / senders); }
 
-  for (auto& s : ss) { s.run(host, port, msg_size); }
+  for (auto& s : ss) { s.start(host, port, msg_size); }
 
-  std::uint64_t last_total_msgs_sent = 0;
+  auto collect_metric = [&] {
+    auto total_msgs_sent =
+      std::accumulate(ss.begin(), ss.end(), 0ul, [](auto count, auto& s) { return count + s.total_msgs_sent(); });
+    return metric_hud::metric{.msgs = total_msgs_sent, .bytes = total_msgs_sent * msg_size};
+  };
+
+  metric_hud hud{std::chrono::seconds{5}, collect_metric};
+
+  hud.run();
+  return 0;
+};
+/*   std::uint64_t last_total_msgs_sent = 0;
   const auto start_time = std::chrono::steady_clock::now();
   auto last_time_checked = start_time;
 
@@ -64,13 +78,11 @@ int main(int argc, char** argv)
     const auto elapsed_time = now - start_time;
     const auto rate = total_msgs_sent / std::chrono::round<std::chrono::seconds>(elapsed_time).count();
     std::cout << "total rate: " << rate << " msgs/s, throughput: " << rate * msg_size << " bytes/s" << std::endl;
-  
+
     const auto elapsed_time_since_last_check = now - last_time_checked;
-    const auto rate_since_last_check = (total_msgs_sent - last_total_msgs_sent) / std::chrono::round<std::chrono::seconds>(elapsed_time_since_last_check).count();
-    std::cout << "current rate: " << rate_since_last_check << " msgs/s, throughput: " << rate_since_last_check * msg_size << " bytes/s" << std::endl;
+    const auto rate_since_last_check = (total_msgs_sent - last_total_msgs_sent) /
+  std::chrono::round<std::chrono::seconds>(elapsed_time_since_last_check).count(); std::cout << "current rate: " <<
+  rate_since_last_check << " msgs/s, throughput: " << rate_since_last_check * msg_size << " bytes/s" << std::endl;
     last_total_msgs_sent = total_msgs_sent;
     last_time_checked = now;
-  }
-
-  return 0;
-}
+  } */
