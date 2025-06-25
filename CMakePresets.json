@@ -2,24 +2,51 @@
   "version": 8,
   "configurePresets": [
     {
-      "name": "linux-debug",
-      "generator": "Unix Makefiles",
-      "binaryDir": "build",
+      "name": "profile",
+      "displayName": "Profiling Build",
+      "description": "Optimized build with debug symbols and frame pointers for perf.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/profile",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_VERBOSE_MAKEFILE" : "ON",
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_CXX_FLAGS": "-fno-omit-frame-pointer"
+      }
+    },
+    {
+      "name": "release",
+      "displayName": "Release Build",
+      "description": "Standard release build with optimizations.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       }
     },
     {
-      "name": "linux-release",
-      "generator": "Unix Makefiles",
-      "binaryDir": "build",
+      "name": "debug",
+      "displayName": "Debug Build",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/debug",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_VERBOSE_MAKEFILE" : "ON",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_VERBOSE_MAKEFILE": "ON",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "profile",
+      "configurePreset": "profile"
+    },
+    {
+      "name": "release",
+      "configurePreset": "release"
+    },
+        {
+      "name": "debug",
+      "configurePreset": "debug"
     }
   ]
 }

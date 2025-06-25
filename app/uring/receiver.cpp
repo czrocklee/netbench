@@ -6,9 +6,12 @@ namespace uring
 
   receiver::receiver(config cfg)
     : config_{std::move(cfg)},
-      io_ctx_{config_.uring_depth},
+      //io_ctx_{config_.uring_depth}, //, config_.params},
+      io_ctx_{config_.uring_depth, config_.params},
+
       buffer_pool_{io_ctx_, config_.buffer_count, config_.buffer_size, config_.buffer_group_id},
-      pending_connections_queue_{128}
+      pending_connections_queue_{128},
+      pending_task_queue_{128}
   {
   }
 
@@ -21,7 +24,7 @@ namespace uring
 
   void receiver::stop()
   {
-    stop_flag_.store(true);
+    stop_flag_.store(true, std::memory_order::relaxed);
 
     if (thread_.joinable())
     {
@@ -35,7 +38,8 @@ namespace uring
   {
     if (!pending_connections_queue_.push(std::move(sock)))
     {
-      std::cerr << "Receiver " << std::this_thread::get_id() << " queue is full. Dropping connection." << std::endl;
+      std::cerr << "Receiver " << std::this_thread::get_id() << "connection queue is full. Dropping connection."
+                << std::endl;
       return false;
     }
 
@@ -43,9 +47,21 @@ namespace uring
     return true;
   }
 
-  void receiver::process_new_connections()
+  bool receiver::post(std::function<void()> task)
   {
-    pending_connections_queue_.consume_all([this](bsd::socket sock) {
+    if (!pending_task_queue_.push(std::move(task)))
+    {
+      std::cerr << "Receiver " << std::this_thread::get_id() << "task queue is full" << std::endl;
+      return false;
+    }
+
+    io_ctx_.wakeup();
+    return true;
+  }
+
+  void receiver::process_new_connections_and_tasks()
+  {
+    pending_connections_queue_.consume_all([this](bsd::socket&& sock) {
       try
       {
         std::cout << "Receiver thread " << std::this_thread::get_id() << " taking ownership of fd " << sock.get_fd()
@@ -59,19 +75,21 @@ namespace uring
         std::cerr << "Failed to create connection from accepted socket: " << e.what() << std::endl;
       }
     });
+
+    pending_task_queue_.consume_all([this](std::function<void()>&& task) { task(); });
   }
 
   void receiver::run()
   {
     std::cout << "Receiver thread " << std::this_thread::get_id() << " started." << std::endl;
-    
+
     try
     {
-      while (!stop_flag_.load())
+      while (!stop_flag_.load(std::memory_order::relaxed))
       {
         io_ctx_.poll();
-        process_new_connections();
-        connections_.remove_if([](const auto& conn) { return conn.is_closed(); });
+        process_new_connections_and_tasks();
+        //connections_.remove_if([](const auto& conn) { return conn.is_closed(); });
       }
     }
     catch (const std::exception& e)

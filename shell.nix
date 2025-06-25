@@ -65,6 +65,7 @@ in
 
     buildInputs = with pkgs; [
       cmake
+      ninja
       gcc
       gdb
       asio

@@ -65,19 +65,27 @@ int main(int argc, char** argv)
     std::vector<std::unique_ptr<uring::receiver>> receivers;
     std::cout << "Starting " << num_threads << " receiver threads on " << address_str << "..." << std::endl;
 
+    uring::io_context io_ctx{128};
+
+    io_uring_params params{};
+
+    //params.flags = IORING_SETUP_ATTACH_WQ;
+    //params.wq_fd = io_ctx.get_ring_fd();
+
+
+    //io_uring_params params{};
+    //params.flags |= IORING_SETUP_SINGLE_ISSUER;
+
     for (auto i = 0u; i < num_threads; ++i)
     {
       uring::receiver::config cfg = {
         .uring_depth = uring_depth,
         .buffer_count = 4096,
         .buffer_size = buffer_size,
-        .buffer_group_id = static_cast<std::uint16_t>(i)};
+        .buffer_group_id = static_cast<std::uint16_t>(i),
+        .params = params};
       receivers.emplace_back(std::make_unique<uring::receiver>(cfg))->start();
     }
-
-    // A single acceptor in the main thread will distribute connections
-    // to the receiver threads in a round-robin fashion.
-    uring::io_context acceptor_io_ctx{128};
 
     auto on_accept = [&, next_receiver_idx = 0](bsd::socket&& new_sock) mutable {
       int accepted_fd = new_sock.get_fd();
@@ -92,14 +100,18 @@ int main(int argc, char** argv)
       next_receiver_idx = (next_receiver_idx + 1) % receivers.size();
     };
 
-    uring::acceptor acceptor{acceptor_io_ctx, on_accept};
+    uring::acceptor acceptor{io_ctx, on_accept};
     acceptor.listen(host, port);
     acceptor.start();
     std::cout << "Main thread acceptor listening on " << address_str << std::endl;
 
     // The main thread now runs the acceptor's event loop until shutdown.
-    while (!shutdown_flag) { acceptor_io_ctx.poll(); }
+    while (!shutdown_flag) { 
+      io_ctx.poll(); 
+      //io_ctx.run_for(std::chrono::seconds{1}); }
+    }
     std::cout << "\nShutting down..." << std::endl;
+
     for (auto& receiver : receivers) { receiver->stop(); }
   }
   catch (const std::exception& e)
@@ -107,6 +119,7 @@ int main(int argc, char** argv)
     std::cerr << "Error: " << e.what() << std::endl;
     return 1;
   }
+
   std::cout << "Server has shut down gracefully." << std::endl;
   return 0;
 }
