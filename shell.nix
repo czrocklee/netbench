@@ -68,6 +68,7 @@ in
       gcc
       gdb
       asio
+      boost.dev
       #liburing
       mimalloc
       cli11

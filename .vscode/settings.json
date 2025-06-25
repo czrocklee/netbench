@@ -76,7 +76,9 @@
     "typeindex": "cpp",
     "typeinfo": "cpp",
     "variant": "cpp",
-    "liburing.h": "c"
+    "liburing.h": "c",
+    "forward_list": "cpp",
+    "unordered_set": "cpp"
   }
 
 
