@@ -61,28 +61,11 @@ int main(int argc, char** argv)
 
   metric_hud hud{std::chrono::seconds{5}, collect_metric};
 
-  hud.run();
-  return 0;
-};
-/*   std::uint64_t last_total_msgs_sent = 0;
-  const auto start_time = std::chrono::steady_clock::now();
-  auto last_time_checked = start_time;
-
   while (true)
   {
-    std::this_thread::sleep_for(std::chrono::seconds(5));
+    hud.tick();
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  }
 
-    const auto total_msgs_sent =
-      std::accumulate(ss.begin(), ss.end(), 0u, [](auto count, auto& s) { return count + s.total_msgs_sent(); });
-    const auto now = std::chrono::steady_clock::now();
-    const auto elapsed_time = now - start_time;
-    const auto rate = total_msgs_sent / std::chrono::round<std::chrono::seconds>(elapsed_time).count();
-    std::cout << "total rate: " << rate << " msgs/s, throughput: " << rate * msg_size << " bytes/s" << std::endl;
-
-    const auto elapsed_time_since_last_check = now - last_time_checked;
-    const auto rate_since_last_check = (total_msgs_sent - last_total_msgs_sent) /
-  std::chrono::round<std::chrono::seconds>(elapsed_time_since_last_check).count(); std::cout << "current rate: " <<
-  rate_since_last_check << " msgs/s, throughput: " << rate_since_last_check * msg_size << " bytes/s" << std::endl;
-    last_total_msgs_sent = total_msgs_sent;
-    last_time_checked = now;
-  } */
+  return 0;
+}

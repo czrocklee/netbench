@@ -1,4 +1,5 @@
 #include "../bsd/socket.hpp"
+#include "../metric_hud.hpp"
 #include "io_context.hpp"
 #include "provided_buffer_pool.hpp"
 
@@ -20,6 +21,8 @@ namespace uring
     void start() { new_multishot_recv_op(); }
 
     bool is_closed() const { return is_closed_; }
+
+    const metric_hud::metric& get_metrics() const { return metrics_; }
 
   private:
     static void on_multishot_recv(const ::io_uring_cqe& cqe, void* context)
@@ -52,6 +55,9 @@ namespace uring
       int buffer_id = cqe.flags >> IORING_CQE_BUFFER_SHIFT;
       uint8_t* buffer = conn->buffer_pool_.get_buffer_address(buffer_id);
 
+      conn->metrics_.bytes += bytes_received;
+      conn->metrics_.msgs++;
+
 
       //printf("Received %d bytes on fd %d (buffer %d)\n", bytes_received, conn->sock_.get_fd(), buffer_id);
 
@@ -78,5 +84,6 @@ namespace uring
     provided_buffer_pool& buffer_pool_;
     io_context::req_data recv_req_data_;
     bool is_closed_;
+    metric_hud::metric metrics_{};
   };
 }

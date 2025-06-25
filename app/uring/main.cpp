@@ -1,13 +1,17 @@
 #include "receiver.hpp"
 #include "acceptor.hpp"
+#include "../metric_hud.hpp"
 
 #include <CLI/CLI.hpp>
 #include <atomic>
 #include <csignal>
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
+#include <future>
 
 std::atomic<bool> shutdown_flag = false;
 
@@ -38,13 +42,19 @@ int main(int argc, char** argv)
   app.add_option("-a,--address", address_str, "Target address in host:port format")->default_val("0.0.0.0:8080");
 
   unsigned buffer_size;
-  app.add_option("-b,--buffer-size", buffer_size, "Size of each receive buffer in bytes")->default_val(1024);
+  app.add_option("-s,--buffer-size", buffer_size, "Size of each receive buffer in bytes")->default_val(1024);
+
+  unsigned buffer_count;
+  app.add_option("-c,--buffer-count", buffer_count, "Number of buffers in pool prepared for each receiver")->default_val(2048);
+
 
   unsigned uring_depth;
   app.add_option("-d,--uring-depth", uring_depth, "io_uring queue depth")->default_val(512);
 
   unsigned num_threads;
   app.add_option("-t,--threads", num_threads, "Number of receiver threads to start")->default_val(1);
+
+
 
   CLI11_PARSE(app, argc, argv);
 
@@ -67,20 +77,20 @@ int main(int argc, char** argv)
 
     uring::io_context io_ctx{128};
 
-    io_uring_params params{};
-
+    //io_uring_params params{};
     //params.flags = IORING_SETUP_ATTACH_WQ;
     //params.wq_fd = io_ctx.get_ring_fd();
 
-
-    //io_uring_params params{};
-    //params.flags |= IORING_SETUP_SINGLE_ISSUER;
+    // io_uring_params params{};
+    // params.flags |= IORING_SETUP_SINGLE_ISSUER;
 
     for (auto i = 0u; i < num_threads; ++i)
     {
+      io_uring_params params{};
+     // params.flags |= IORING_SETUP_SINGLE_ISSUER;
       uring::receiver::config cfg = {
         .uring_depth = uring_depth,
-        .buffer_count = 4096,
+        .buffer_count = buffer_count,
         .buffer_size = buffer_size,
         .buffer_group_id = static_cast<std::uint16_t>(i),
         .params = params};
@@ -105,11 +115,41 @@ int main(int argc, char** argv)
     acceptor.start();
     std::cout << "Main thread acceptor listening on " << address_str << std::endl;
 
+    auto collect_metric = [&receivers]() -> metric_hud::metric { // This lambda is good, keep it.
+      std::vector<std::future<metric_hud::metric>> futures;
+      futures.reserve(receivers.size());
+
+      for (auto& receiver_ptr : receivers)
+      {
+        auto p = std::make_shared<std::promise<metric_hud::metric>>();
+        futures.emplace_back(p->get_future()); // std::future requires <future>
+
+        receiver_ptr->post([p, receiver = receiver_ptr.get()]() {
+          p->set_value(receiver->get_metrics());
+        }); // std::function requires <functional>
+      }
+
+      metric_hud::metric total_metric{};
+
+      for (auto& f : futures)
+      {
+        auto m = f.get();
+        total_metric.msgs += m.msgs;
+        total_metric.bytes += m.bytes;
+      }
+
+      return total_metric;
+    };
+
+    metric_hud hud{std::chrono::seconds{5}, collect_metric};
+
     // The main thread now runs the acceptor's event loop until shutdown.
-    while (!shutdown_flag) { 
-      io_ctx.poll(); 
-      //io_ctx.run_for(std::chrono::seconds{1}); }
+    while (!shutdown_flag)
+    {
+      io_ctx.run_for(std::chrono::milliseconds{100});
+      hud.tick();
     }
+
     std::cout << "\nShutting down..." << std::endl;
 
     for (auto& receiver : receivers) { receiver->stop(); }

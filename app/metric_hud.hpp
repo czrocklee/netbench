@@ -18,7 +18,7 @@ public:
 
   metric_hud(std::chrono::seconds interval, std::function<metric()> action) : interval_(interval), action_(action) {}
 
-  void run();
+  void tick();
 
 private:
   std::chrono::steady_clock::time_point start_time_;

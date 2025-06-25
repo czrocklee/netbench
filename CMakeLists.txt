@@ -20,7 +20,14 @@ target_include_directories(metric_hud PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/app)
 
 # --- Executables ---
 # Define the executable targets and their sources
-add_executable(bsd_server app/bsd/main.cpp)
+add_executable(bsd_server
+    app/bsd/main.cpp
+    app/bsd/receiver.cpp
+    app/bsd/io_context.cpp
+    app/bsd/acceptor.cpp
+    app/bsd/connection.cpp
+)
+target_link_libraries(bsd_server PRIVATE metric_hud CLI11::CLI11 Boost::headers)
 
 add_executable(asio_client app/asio/asio_client.cpp)
 

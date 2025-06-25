@@ -3,7 +3,6 @@
 #include "../metric_hud.hpp"
 #include "connection.hpp"
 #include "io_context.hpp"
-#include "provided_buffer_pool.hpp"
 
 #include <boost/lockfree/spsc_queue.hpp>
 
@@ -12,20 +11,17 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <functional>
 
-namespace uring
+namespace bsd
 {
-
   class receiver
   {
   public:
     struct config
     {
-      unsigned uring_depth;
-      unsigned buffer_count;
+      unsigned epoll_size;
       unsigned buffer_size;
-      uint16_t buffer_group_id;
-      io_uring_params params{};
     };
 
     explicit receiver(config cfg);
@@ -33,8 +29,6 @@ namespace uring
 
     receiver(const receiver&) = delete;
     receiver& operator=(const receiver&) = delete;
-    receiver(receiver&&) = delete;
-    receiver& operator=(receiver&&) = delete;
 
     void start();
     void stop();
@@ -43,8 +37,6 @@ namespace uring
 
     metric_hud::metric get_metrics();
 
-    io_context& get_io_context() { return io_ctx_; }
-
   private:
     void run();
     void process_new_connections_and_tasks();
@@ -52,11 +44,9 @@ namespace uring
     config config_;
     std::atomic<bool> stop_flag_{false};
     io_context io_ctx_;
-    provided_buffer_pool buffer_pool_;
     std::list<connection> connections_;
     boost::lockfree::spsc_queue<bsd::socket> pending_connections_queue_;
     boost::lockfree::spsc_queue<std::function<void()>> pending_task_queue_;
     std::thread thread_;
   };
-
-} // namespace uring
+}
