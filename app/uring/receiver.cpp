@@ -92,6 +92,7 @@ namespace uring
   void receiver::run()
   {
     std::cout << "Receiver thread " << std::this_thread::get_id() << " started." << std::endl;
+    io_ctx_.enable();
 
     try
     {

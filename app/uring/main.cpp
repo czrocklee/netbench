@@ -86,14 +86,25 @@ int main(int argc, char** argv)
 
     for (auto i = 0u; i < num_threads; ++i)
     {
-      io_uring_params params{};
-     // params.flags |= IORING_SETUP_SINGLE_ISSUER;
+      //io_uring_params params{};
+      //params.cq_entries = 65536;
+      //params.flags == IORING_SETUP_DEFER_TASKRUN;
+      //params.flags |= IORING_SETUP_COOP_TASKRUN;
+
       uring::receiver::config cfg = {
         .uring_depth = uring_depth,
         .buffer_count = buffer_count,
         .buffer_size = buffer_size,
-        .buffer_group_id = static_cast<std::uint16_t>(i),
-        .params = params};
+        .buffer_group_id = static_cast<std::uint16_t>(i)};
+
+      cfg.params.cq_entries = 65536;
+      cfg.params.flags |= IORING_SETUP_R_DISABLED;
+      cfg.params.flags |= IORING_SETUP_SINGLE_ISSUER;
+      cfg.params.flags |= IORING_SETUP_DEFER_TASKRUN;
+      cfg.params.flags |= IORING_SETUP_COOP_TASKRUN;
+
+      
+
       receivers.emplace_back(std::make_unique<uring::receiver>(cfg))->start();
     }
 

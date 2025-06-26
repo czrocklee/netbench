@@ -1,0 +1,160 @@
+#!/usr/bin/bpftrace
+/*
+ * io_uring_trace.bt - A detailed tracer for io_uring applications.
+ *
+ * This script provides a detailed view of an io_uring application's lifecycle,
+ * including ring creation, request submission, and completion. It calculates
+ * the latency of each operation and decodes opcodes for readability.
+ *
+ * This version uses implicit map creation for maximum bpftrace version compatibility.
+ *
+ * USAGE:
+ * 1. Save this script as `io_uring_trace.bt`
+ * 2. Make it executable: `chmod +x io_uring_trace.bt`
+ * 3. Run it with sudo, passing the name of the target application:
+ * sudo ./io_uring_trace.bt your_app_name
+ *
+ * EXAMPLE:
+ * sudo ./io_uring_trace.bt my_web_server
+ */
+
+// Check for the command-line argument (the application name)
+BEGIN
+{
+	if ($# < 1) {
+		printf("USAGE: sudo ./io_uring_trace.bt <comm>\n");
+		exit();
+	}
+
+	@errno_map[1] = "EPERM";
+	@errno_map[2] = "ENOENT"; 
+	@errno_map[3] = "ESRCH";
+	@errno_map[4] = "EINTR";
+	@errno_map[5] = "EIO";
+	@errno_map[6] = "ENXIO";
+	@errno_map[7] = "E2BIG";
+	@errno_map[8] = "ENOEXEC";
+	@errno_map[9] = "EBADF";
+	@errno_map[10] = "ECHILD";
+	@errno_map[11] = "EAGAIN";
+	@errno_map[12] = "ENOMEM";
+	@errno_map[13] = "EACCES";
+	@errno_map[14] = "EFAULT";
+	@errno_map[15] = "ENOTBLK";
+	@errno_map[16] = "EBUSY";
+	@errno_map[17] = "EEXIST";
+	@errno_map[18] = "EXDEV";
+	@errno_map[19] = "ENODEV";
+	@errno_map[20] = "ENOTDIR";
+	@errno_map[21] = "EISDIR";
+	@errno_map[22] = "EINVAL";
+	@errno_map[23] = "ENFILE";
+	@errno_map[24] = "EMFILE";
+	@errno_map[25] = "ENOTTY";
+	@errno_map[26] = "ETXTBSY";
+	@errno_map[27] = "EFBIG";
+	@errno_map[28] = "ENOSPC";
+	@errno_map[29] = "ESPIPE";
+	@errno_map[30] = "EROFS";
+	@errno_map[31] = "EMLINK";
+	@errno_map[32] = "EPIPE";
+	@errno_map[33] = "EDOM";
+	@errno_map[34] = "ERANGE";
+	@errno_map[35] = "EDEADLK";
+	@errno_map[36] = "ENAMETOOLONG";
+	@errno_map[37] = "ENOLCK";
+	@errno_map[38] = "ENOSYS";
+	@errno_map[39] = "ENOTEMPTY";
+	@errno_map[40] = "ELOOP";
+	@errno_map[42] = "ENOMSG";
+	@errno_map[43] = "EIDRM";
+	@errno_map[95] = "ENOTSUP";
+	@errno_map[98] = "EADDRINUSE";
+	@errno_map[99] = "EADDRNOTAVAIL";
+	@errno_map[100] = "ENETDOWN";
+	@errno_map[101] = "ENETUNREACH";
+	@errno_map[103] = "ECONNABORTED";
+	@errno_map[104] = "ECONNRESET";
+	@errno_map[105] = "ENOBUFS";
+	@errno_map[106] = "EISCONN";
+	@errno_map[107] = "ENOTCONN";
+	@errno_map[110] = "ETIMEDOUT";
+	@errno_map[111] = "ECONNREFUSED";
+
+	printf("Tracing io_uring activity for comm '%s'... Press Ctrl-C to end.\n", str($1));
+	printf("%-12s %-6s %-16s %-20s %-16s %-10s %s\n", "TIME(ms)", "PID", "COMM", "EVENT", "OPCODE/RES", "LAT(us)", "DETAILS");
+}
+
+tracepoint:io_uring:io_uring_create
+/comm == str($1)/
+{
+	printf("%-12u %-6d %-16s %-20s %-16d %-10s fd=%d, entries=%d, flags=0x%x\n",
+		0, pid, comm, "RING_CREATE", args->sq_entries, "-",
+		args->fd, args->sq_entries, args->flags);
+}
+
+
+// --- Event: Submission Queue Entry (SQE) Submitted ---
+tracepoint:io_uring:io_uring_submit_req
+/comm == str($1)/
+{
+	// Decode the opcode for readability
+	$opcode_str = "UNKNOWN";
+	if (args->opcode == 0) { $opcode_str = "NOP"; }
+	if (args->opcode == 1) { $opcode_str = "READV"; }
+	if (args->opcode == 2) { $opcode_str = "WRITEV"; }
+	if (args->opcode == 3) { $opcode_str = "FSYNC"; }
+	if (args->opcode == 4) { $opcode_str = "READ_FIXED"; }
+	if (args->opcode == 5) { $opcode_str = "WRITE_FIXED"; }
+	if (args->opcode == 6) { $opcode_str = "POLL_ADD"; }
+	if (args->opcode == 7) { $opcode_str = "POLL_REMOVE"; }
+	if (args->opcode == 9) { $opcode_str = "SENDMSG"; }
+	if (args->opcode == 10) { $opcode_str = "RECVMSG"; }
+	if (args->opcode == 11) { $opcode_str = "TIMEOUT"; }
+	if (args->opcode == 13) { $opcode_str = "ACCEPT"; }
+	if (args->opcode == 14) { $opcode_str = "ASYNC_CANCEL"; }
+	if (args->opcode == 16) { $opcode_str = "CONNECT"; }
+	if (args->opcode == 18) { $opcode_str = "OPENAT"; }
+	if (args->opcode == 19) { $opcode_str = "CLOSE"; }
+	if (args->opcode == 22) { $opcode_str = "READ"; }
+	if (args->opcode == 23) { $opcode_str = "WRITE"; }
+	if (args->opcode == 26) { $opcode_str = "SEND"; }
+	if (args->opcode == 27) { $opcode_str = "RECV"; }
+	if (args->opcode == 29) { $opcode_str = "EPOLL_CTL"; }
+	if (args->opcode == 30) { $opcode_str = "SPLICE"; }
+	if (args->opcode == 31) { $opcode_str = "PROVIDE_BUFFERS"; }
+	if (args->opcode == 32) { $opcode_str = "REMOVE_BUFFERS"; }
+
+	printf("%-12u %-6d %-16s %-20s %-16s %-10s op=%s, user_data=%-12u flags=0x%x\n",
+		0, pid, comm, "SQE_SUBMIT", $opcode_str, "-",
+		"XXX", args->user_data, args->flags);
+}
+
+tracepoint:io_uring:io_uring_complete
+/comm == str($1)/
+{
+	// $start_time = @submit_time[tid, args->user_data];
+	// $latency_us = ($start_time > 0) ? (nsecs - $start_time) / 1000 : 0;
+	
+	$res_str = "UNKNOWN";
+	if ((int32)args->res < 0) {
+		$errno = -args->res;
+    $res_str = @errno_map[$errno] != "" ? @errno_map[$errno] : "UNKNOWN";	
+	} else {
+		$res_str = str((int32)args->res);
+	}
+
+	printf("%-12u %-6d %-16s %-20s %-16s %-10d user_data=%-12u flags=0x%x\n",
+		0, pid, comm, "CQE_COMPLETE", $res_str, 0,
+		args->user_data, args->cflags);
+
+	// Clean up the map entry
+	// delete(@submit_time[tid, args->user_data]);
+}
+
+
+// --- Cleanup on exit ---
+END
+{
+	printf("Detaching tracer.\n");
+}

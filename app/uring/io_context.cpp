@@ -39,9 +39,14 @@ namespace uring
     io_uring_queue_exit(&ring_);
   }
 
+  void io_context::enable() { ::io_uring_enable_rings(&ring_); }
+
   void io_context::poll()
   {
-    if (int ret = io_uring_submit_and_wait(&ring_, 1); ret < 0)
+
+    //if (int ret = io_uring_submit(&ring_); ret < 0)
+
+    if (int ret = io_uring_submit_and_wait(&ring_, 1 ); ret < 0)
     {
       // EINTR is a recoverable error, we can just try again on the next poll.
       if (-ret == EINTR)

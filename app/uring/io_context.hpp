@@ -16,6 +16,8 @@ namespace uring
 
     io_context(unsigned entries, ::io_uring_params& params);
 
+    void enable();
+
     void poll();
 
     template<typename Rep, typename Period>
