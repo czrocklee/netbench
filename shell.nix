@@ -65,6 +65,7 @@ in
 
     buildInputs = with pkgs; [
       cmake
+      pkg-config
       ninja
       gcc
       gdb

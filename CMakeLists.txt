@@ -14,7 +14,6 @@ endif()
 find_package(CLI11 REQUIRED)
 find_package(Boost REQUIRED COMPONENTS headers)
 
-# --- Libraries ---
 add_library(metric_hud STATIC app/metric_hud.cpp)
 target_include_directories(metric_hud PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/app)
 
@@ -45,11 +44,17 @@ target_link_libraries(uring_server PRIVATE metric_hud Boost::headers)
 add_executable(client app/client/main.cpp)
 target_link_libraries(client PRIVATE metric_hud CLI11::CLI11)
 
+add_executable(uring_client app/client/uring.cpp app/client/uring_sender.cpp)
+target_link_libraries(uring_client PRIVATE metric_hud CLI11::CLI11)
+
+
 # Link against liburing
 find_library(LIBURING_LIBRARY uring)
 if(LIBURING_LIBRARY)
     message(STATUS "Found liburing: ${LIBURING_LIBRARY}")
     target_link_libraries(uring_server PRIVATE ${LIBURING_LIBRARY})
+        target_link_libraries(uring_client PRIVATE ${LIBURING_LIBRARY})
+
 else()
     message(FATAL_ERROR "liburing not found. Please install it (e.g., sudo apt-get install liburing-dev)")
 endif()

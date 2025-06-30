@@ -27,6 +27,8 @@ namespace uring
 
     int get_ring_fd() const { return ring_.ring_fd; }
 
+    ::io_uring* get_ring() { return &ring_; }
+
   private:
     using handler_type = std::add_pointer<void(const ::io_uring_cqe&, void* context)>::type;
 
@@ -46,9 +48,7 @@ namespace uring
 
     void process_cqe(::io_uring_cqe* cqe, unsigned& count);
 
-    ::io_uring* get_ring() { return &ring_; }
-
-
+    //::io_uring* get_ring() { return &ring_; }
 
     ::io_uring ring_;
     int wakeup_fd_ = -1;
