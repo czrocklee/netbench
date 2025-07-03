@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../bsd/socket.hpp"
+#include "bsd/socket.hpp"
 
 #include <cstring>
 #include <iostream>

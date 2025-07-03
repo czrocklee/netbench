@@ -1,7 +1,7 @@
-#include "../bsd/socket.hpp"
-#include "../metric_hud.hpp"
-#include "io_context.hpp"
-#include "provided_buffer_pool.hpp"
+#include "bsd/socket.hpp"
+#include "utility/metric_hud.hpp"
+#include "uring/io_context.hpp"
+#include "uring/provided_buffer_pool.hpp"
 
 namespace uring
 {
@@ -22,7 +22,7 @@ namespace uring
 
     bool is_closed() const { return is_closed_; }
 
-    const metric_hud::metric& get_metrics() const { return metrics_; }
+    const utility::metric_hud::metric& get_metrics() const { return metrics_; }
 
   private:
     static void on_multishot_recv(const ::io_uring_cqe& cqe, void* context)
@@ -84,6 +84,6 @@ namespace uring
     provided_buffer_pool& buffer_pool_;
     io_context::req_data recv_req_data_;
     bool is_closed_;
-    metric_hud::metric metrics_{};
+    utility::metric_hud::metric metrics_{};
   };
 }

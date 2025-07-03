@@ -1,8 +1,8 @@
 #pragma once
 
-#include "../bsd/socket.hpp"
-#include "../metric_hud.hpp"
-#include "io_context.hpp"
+#include "bsd/socket.hpp"
+#include "utility/metric_hud.hpp"
+#include "bsd/io_context.hpp"
 #include <vector>
 
 namespace bsd
@@ -19,7 +19,7 @@ namespace bsd
     void start();
 
     bool is_closed() const { return is_closed_; }
-    const metric_hud::metric& get_metrics() const { return metrics_; }
+    const utility::metric_hud::metric& get_metrics() const { return metrics_; }
 
   private:
     static void on_events(uint32_t events, void* context);
@@ -30,7 +30,7 @@ namespace bsd
     bsd::socket sock_;
     std::vector<char> buffer_;
     bool is_closed_;
-    metric_hud::metric metrics_{};
+    utility::metric_hud::metric metrics_{};
     io_context::event_data event_data_;
   };
 }

@@ -143,10 +143,11 @@ tracepoint:io_uring:io_uring_complete
 	} else {
 		$res_str = str((int32)args->res);
 	}
+	
 
-	printf("%-12u %-6d %-16s %-20s %-16s %-10d user_data=%-12u flags=0x%x\n",
-		0, pid, comm, "CQE_COMPLETE", $res_str, 0,
-		args->user_data, args->cflags);
+	printf("%-12u %-6d %-16s %-20s %-16s %-10d op=%s, user_data=%-12u flags=0x%x\n",
+		0, pid, comm, "CQE_COMPLETE", "-", args->res,
+		"XXX", args->user_data, args->cflags);
 
 	// Clean up the map entry
 	// delete(@submit_time[tid, args->user_data]);

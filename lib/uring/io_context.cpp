@@ -44,9 +44,34 @@ namespace uring
   void io_context::poll()
   {
 
-    //if (int ret = io_uring_submit(&ring_); ret < 0)
+    // if (int ret = io_uring_submit(&ring_); ret < 0)
+    if (int ret = io_uring_submit(&ring_); ret < 0)
+    {
+      // EINTR is a recoverable error, we can just try again on the next poll.
+      if (-ret == EINTR)
+        return;
 
-    if (int ret = io_uring_submit_and_wait(&ring_, 1 ); ret < 0)
+      throw std::system_error{-ret, std::system_category(), "io_uring_submit failed"};
+    }
+
+    ::io_uring_cqe* cqes[16];
+
+    auto count = ::io_uring_peek_batch_cqe(&ring_, cqes, 16);
+
+    if (count == 0)
+    {
+      return;
+    }
+
+    for (unsigned i = 0; i < count; ++i) { process_cqe(cqes[i]); }
+
+    ::io_uring_cq_advance(&ring_, count);
+  }
+
+  void io_context::poll_wait()
+  {
+
+    if (int ret = io_uring_submit_and_wait(&ring_, 1); ret < 0)
     {
       // EINTR is a recoverable error, we can just try again on the next poll.
       if (-ret == EINTR)
@@ -60,7 +85,11 @@ namespace uring
     unsigned head;
     unsigned count = 0;
 
-    io_uring_for_each_cqe(&ring_, head, cqe) { process_cqe(cqe, count); }
+    io_uring_for_each_cqe(&ring_, head, cqe)
+    {
+      process_cqe(cqe);
+      ++count;
+    }
 
     ::io_uring_cq_advance(&ring_, count);
   }
@@ -85,7 +114,11 @@ namespace uring
     unsigned head;
     unsigned count = 0;
 
-    io_uring_for_each_cqe(&ring_, head, cqe) { process_cqe(cqe, count); }
+    io_uring_for_each_cqe(&ring_, head, cqe)
+    {
+      process_cqe(cqe);
+      ++count;
+    }
 
     ::io_uring_cq_advance(&ring_, count);
   }
@@ -131,14 +164,14 @@ namespace uring
     }
   }
 
-  void io_context::process_cqe(::io_uring_cqe* cqe, unsigned& count)
+  void io_context::process_cqe(::io_uring_cqe* cqe)
   {
-    ++count;
     auto* data = reinterpret_cast<req_data*>(::io_uring_cqe_get_data(cqe));
+
     if (data && data->handler)
     {
       data->handler(*cqe, data->context);
-    }
+    }   
   }
 
   ::io_uring_sqe& io_context::create_request(req_data& data)

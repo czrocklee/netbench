@@ -1,6 +1,6 @@
 #include "receiver.hpp"
-#include "acceptor.hpp"
-#include "../metric_hud.hpp"
+#include "uring/acceptor.hpp"
+#include "utility/metric_hud.hpp"
 
 #include <CLI/CLI.hpp>
 #include <atomic>
@@ -45,16 +45,14 @@ int main(int argc, char** argv)
   app.add_option("-s,--buffer-size", buffer_size, "Size of each receive buffer in bytes")->default_val(1024);
 
   unsigned buffer_count;
-  app.add_option("-c,--buffer-count", buffer_count, "Number of buffers in pool prepared for each receiver")->default_val(2048);
-
+  app.add_option("-c,--buffer-count", buffer_count, "Number of buffers in pool prepared for each receiver")
+    ->default_val(2048);
 
   unsigned uring_depth;
   app.add_option("-d,--uring-depth", uring_depth, "io_uring queue depth")->default_val(512);
 
   unsigned num_threads;
   app.add_option("-t,--threads", num_threads, "Number of receiver threads to start")->default_val(1);
-
-
 
   CLI11_PARSE(app, argc, argv);
 
@@ -77,19 +75,19 @@ int main(int argc, char** argv)
 
     uring::io_context io_ctx{128};
 
-    //io_uring_params params{};
-    //params.flags = IORING_SETUP_ATTACH_WQ;
-    //params.wq_fd = io_ctx.get_ring_fd();
+    // io_uring_params params{};
+    // params.flags = IORING_SETUP_ATTACH_WQ;
+    // params.wq_fd = io_ctx.get_ring_fd();
 
     // io_uring_params params{};
     // params.flags |= IORING_SETUP_SINGLE_ISSUER;
 
     for (auto i = 0u; i < num_threads; ++i)
     {
-      //io_uring_params params{};
-      //params.cq_entries = 65536;
-      //params.flags == IORING_SETUP_DEFER_TASKRUN;
-      //params.flags |= IORING_SETUP_COOP_TASKRUN;
+      // io_uring_params params{};
+      // params.cq_entries = 65536;
+      // params.flags == IORING_SETUP_DEFER_TASKRUN;
+      // params.flags |= IORING_SETUP_COOP_TASKRUN;
 
       uring::receiver::config cfg = {
         .uring_depth = uring_depth,
@@ -103,15 +101,14 @@ int main(int argc, char** argv)
       cfg.params.flags |= IORING_SETUP_DEFER_TASKRUN;
       cfg.params.flags |= IORING_SETUP_COOP_TASKRUN;
 
-      
-
       receivers.emplace_back(std::make_unique<uring::receiver>(cfg))->start();
     }
 
     auto on_accept = [&, next_receiver_idx = 0](bsd::socket&& new_sock) mutable {
       int accepted_fd = new_sock.get_fd();
+      auto& receiver = receivers[next_receiver_idx];
 
-      if (!receivers[next_receiver_idx]->add_connection(std::move(new_sock)))
+      if (!receiver->post([&receiver, sock = std::move(new_sock)]() mutable { receiver->add_connection(std::move(sock)); }))
       {
         std::cerr << "Main thread FAILED to hand off fd " << accepted_fd << " to receiver " << next_receiver_idx
                   << " (queue full?)" << std::endl;
@@ -126,13 +123,13 @@ int main(int argc, char** argv)
     acceptor.start();
     std::cout << "Main thread acceptor listening on " << address_str << std::endl;
 
-    auto collect_metric = [&receivers]() -> metric_hud::metric { // This lambda is good, keep it.
-      std::vector<std::future<metric_hud::metric>> futures;
+    auto collect_metric = [&receivers]() -> utility::metric_hud::metric { // This lambda is good, keep it.
+      std::vector<std::future<utility::metric_hud::metric>> futures;
       futures.reserve(receivers.size());
 
       for (auto& receiver_ptr : receivers)
       {
-        auto p = std::make_shared<std::promise<metric_hud::metric>>();
+        auto p = std::make_shared<std::promise<utility::metric_hud::metric>>();
         futures.emplace_back(p->get_future()); // std::future requires <future>
 
         receiver_ptr->post([p, receiver = receiver_ptr.get()]() {
@@ -140,7 +137,7 @@ int main(int argc, char** argv)
         }); // std::function requires <functional>
       }
 
-      metric_hud::metric total_metric{};
+      utility::metric_hud::metric total_metric{};
 
       for (auto& f : futures)
       {
@@ -152,7 +149,7 @@ int main(int argc, char** argv)
       return total_metric;
     };
 
-    metric_hud hud{std::chrono::seconds{5}, collect_metric};
+    utility::metric_hud hud{std::chrono::seconds{5}, collect_metric};
 
     // The main thread now runs the acceptor's event loop until shutdown.
     while (!shutdown_flag)

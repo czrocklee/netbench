@@ -46,9 +46,9 @@ namespace bsd
     return true;
   }
 
-  metric_hud::metric receiver::get_metrics()
+  utility::metric_hud::metric receiver::get_metrics()
   {
-    metric_hud::metric total{};
+    utility::metric_hud::metric total{};
     for (const auto& conn : connections_)
     {
       const auto& conn_metrics = conn.get_metrics();

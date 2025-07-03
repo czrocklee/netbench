@@ -1,6 +1,6 @@
 #include "receiver.hpp"
-#include "acceptor.hpp"
-#include "../metric_hud.hpp"
+#include "bsd/acceptor.hpp"
+#include "utility/metric_hud.hpp"
 
 #include <CLI/CLI.hpp>
 #include <atomic>
@@ -87,16 +87,16 @@ int main(int argc, char** argv)
     acceptor.start();
     std::cout << "Main thread acceptor listening on " << address_str << std::endl;
 
-    auto collect_metric = [&receivers]() -> metric_hud::metric {
-      std::vector<std::future<metric_hud::metric>> futures;
+    auto collect_metric = [&receivers]() -> utility::metric_hud::metric {
+      std::vector<std::future<utility::metric_hud::metric>> futures;
       futures.reserve(receivers.size());
       for (auto& receiver_ptr : receivers)
       {
-        auto p = std::make_shared<std::promise<metric_hud::metric>>();
+        auto p = std::make_shared<std::promise<utility::metric_hud::metric>>();
         futures.emplace_back(p->get_future());
         receiver_ptr->post([p, receiver = receiver_ptr.get()]() { p->set_value(receiver->get_metrics()); });
       }
-      metric_hud::metric total_metric{};
+      utility::metric_hud::metric total_metric{};
       for (auto& f : futures)
       {
         auto m = f.get();
@@ -106,7 +106,7 @@ int main(int argc, char** argv)
       return total_metric;
     };
 
-    metric_hud hud{std::chrono::seconds{5}, collect_metric};
+    utility::metric_hud hud{std::chrono::seconds{5}, collect_metric};
 
     while (!shutdown_flag)
     {

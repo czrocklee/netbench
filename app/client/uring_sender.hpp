@@ -2,7 +2,10 @@
 
 #include "bsd/socket.hpp"
 #include <liburing.h> // Use the raw liburing header
+#include "uring/io_context.hpp"
+#include "uring/provided_buffer_pool.hpp"
 
+#include <iostream>
 #include <vector>
 #include <string>
 #include <thread>
@@ -15,7 +18,7 @@ namespace client
   class uring_sender
   {
   public:
-    uring_sender(int id, const std::string& host, const std::string& port, int msg_size, int msgs_per_sec);
+    uring_sender(int id, const std::string& host, const std::string& port, std::size_t msg_size, int msgs_per_sec);
 
     ~uring_sender();
 
@@ -33,17 +36,23 @@ namespace client
   private:
     void run();
 
-    void on_send_complete(::io_uring_cqe* cqe);
+    static void on_send_complete(const ::io_uring_cqe& cqe, void* context);
 
     int id_;
-    ::io_uring ring_; // Direct io_uring instance
-    bsd::socket conn_;
-    std::vector<std::byte> message_;
+    uring::io_context io_ctx_;
+    bsd::socket sock_;
+    uring::provided_buffer_pool buffer_pool_;
+    std::int16_t buffer_id_head_ = 0;
+    std::int16_t buffer_id_tail_ = 0;
+    bool is_buffer_full_ = false;
+    std::size_t msgs_requested_ = 0;
+    uring::io_context::req_data send_req_data_;
+
+    std::chrono::steady_clock::time_point start_time_;
     std::chrono::nanoseconds interval_;
     std::jthread thread_;
-    struct iovec iovec_;
 
-    std::atomic<uint64_t> total_msgs_completed_{0};
+    std::atomic<uint64_t> total_msgs_sent_{0};
     std::atomic<uint64_t> total_bytes_sent_{0};
   };
 

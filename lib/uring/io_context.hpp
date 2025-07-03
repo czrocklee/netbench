@@ -19,6 +19,8 @@ namespace uring
     void enable();
 
     void poll();
+    
+    void poll_wait();
 
     template<typename Rep, typename Period>
     void run_for(const std::chrono::duration<Rep, Period>& timeout);
@@ -29,7 +31,7 @@ namespace uring
 
     ::io_uring* get_ring() { return &ring_; }
 
-  private:
+  //private:
     using handler_type = std::add_pointer<void(const ::io_uring_cqe&, void* context)>::type;
 
     struct req_data
@@ -46,7 +48,7 @@ namespace uring
 
     ::io_uring_sqe& create_request(req_data& data);
 
-    void process_cqe(::io_uring_cqe* cqe, unsigned& count);
+    void process_cqe(::io_uring_cqe* cqe);
 
     //::io_uring* get_ring() { return &ring_; }
 
@@ -58,6 +60,7 @@ namespace uring
     friend class connection;
     friend class acceptor;
     friend class provided_buffer_pool;
+    friend class sender;
   };
 
   template<typename Rep, typename Period>

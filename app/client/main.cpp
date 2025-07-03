@@ -1,5 +1,5 @@
 #include "sender.hpp"
-#include "metric_hud.hpp"
+#include "utility/metric_hud.hpp"
 
 #include <CLI/CLI.hpp>
 
@@ -56,10 +56,10 @@ int main(int argc, char** argv)
   auto collect_metric = [&] {
     auto total_msgs_sent =
       std::accumulate(ss.begin(), ss.end(), 0ul, [](auto count, auto& s) { return count + s.total_msgs_sent(); });
-    return metric_hud::metric{.msgs = total_msgs_sent, .bytes = total_msgs_sent * msg_size};
+    return utility::metric_hud::metric{.msgs = total_msgs_sent, .bytes = total_msgs_sent * msg_size};
   };
 
-  metric_hud hud{std::chrono::seconds{5}, collect_metric};
+  utility::metric_hud hud{std::chrono::seconds{5}, collect_metric};
 
   while (true)
   {

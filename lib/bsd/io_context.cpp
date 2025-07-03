@@ -81,7 +81,7 @@ namespace bsd
   void io_context::remove(int fd)
   {
     // It's okay if the fd is already closed/removed, so we don't check for errors.
-    [[maybe_unused]] epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr);
+    epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr);
   }
 
   void io_context::poll() { run_for(std::chrono::milliseconds{-1}); }

@@ -1,5 +1,5 @@
 #include "uring_sender.hpp"
-#include "metric_hud.hpp"
+#include "utility/metric_hud.hpp"
 
 #include <CLI/CLI.hpp>
 
@@ -62,10 +62,10 @@ int main(int argc, char** argv)
       sender_list.begin(), sender_list.end(), 0ul, [](auto count, auto& s) { return count + s->total_msgs_sent(); });
     auto total_bytes = std::accumulate(
       sender_list.begin(), sender_list.end(), 0ul, [](auto count, auto& s) { return count + s->total_bytes_sent(); });
-    return metric_hud::metric{.msgs = total_msgs, .bytes = total_bytes};
+    return utility::metric_hud::metric{.msgs = total_msgs, .bytes = total_bytes};
   };
 
-  metric_hud hud{std::chrono::seconds{5}, collect_metric};
+  utility::metric_hud hud{std::chrono::seconds{5}, collect_metric};
 
   while (true)
   {

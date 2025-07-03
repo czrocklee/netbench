@@ -2,142 +2,136 @@
 
 #include <iostream>
 #include <numeric>
+#include <random>
 
 namespace client
 {
 
-  uring_sender::uring_sender(int id, const std::string& host, const std::string& port, int msg_size, int msgs_per_sec)
+  namespace 
+  {
+    uring_sender* self = nullptr;
+  }
+
+  uring_sender::uring_sender(
+    int id,
+    const std::string& host,
+    const std::string& port,
+    std::size_t msg_size,
+    int msgs_per_sec)
     : id_{id},
-      conn_{AF_INET, SOCK_STREAM, 0},
-      interval_(
-        msgs_per_sec > 0 ? std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::seconds{1}) / msgs_per_sec
-                         : std::chrono::nanoseconds{0})
+      io_ctx_{65536 / 2},
+      sock_{AF_INET, SOCK_STREAM, 0},
+      buffer_pool_{io_ctx_, 16, msg_size, static_cast<std::uint16_t>(id)},
+      send_req_data_{on_send_complete, this},
+      interval_{std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::seconds{1}) / msgs_per_sec}
+
   {
-    // Initialize the io_uring instance directly.
-    if (::io_uring_queue_init(256, &ring_, 0) < 0)
+    self = this;
 
-//    if (::io_uring_queue_init(32768, &ring_, 0) < 0)
+    for (auto i = 0; i < buffer_pool_.get_buffer_count(); ++i)
     {
-      throw std::runtime_error("io_uring_queue_init failed: " + std::string(strerror(errno)));
+      auto* buffer = buffer_pool_.get_buffer_address(i);
+      std::memset(buffer, 'a' + i % 26, msg_size);
     }
 
-    if (::posix_memalign((void**)&iovec_.iov_base, 4096, msg_size))
-    {
-      throw std::runtime_error("posix_memalign failed: " + std::string(strerror(errno)));
-    }
-
-    iovec_.iov_len = msg_size;
-
-
-    if (int ret = ::io_uring_register_buffers(&ring_, &iovec_, 1); ret != 0)
-    {
-      throw std::runtime_error("io_uring_register_buffers failed: " + std::string(strerror(-ret)));
-    }
-
-
-    // message_.resize(msg_size, std::byte{'a'});
-
-    // Establish the connection.
-    conn_.connect(host, port);
-
-    // Register the file descriptor with this io_uring instance.
-    int fd = conn_.get_fd();
-
-    if (io_uring_register_files(&ring_, &fd, 1) < 0)
-    {
-      io_uring_queue_exit(&ring_); // Clean up the ring on failure.
-      throw std::runtime_error("io_uring_register_files failed: " + std::string(strerror(errno)));
-    }
+    sock_.connect(host, port);
   }
 
-  uring_sender::~uring_sender()
-  {
-    // Unregister files and shut down the io_uring instance.
-    io_uring_unregister_files(&ring_);
-    io_uring_queue_exit(&ring_);
-  }
+  uring_sender::~uring_sender() {}
 
   void uring_sender::start()
   {
+    static std::random_device rd;
+    start_time_ = std::chrono::steady_clock::now() +
+                  std::chrono::nanoseconds{std::uniform_int_distribution<std::int64_t>{0, interval_.count()}(rd)};
+
     thread_ = std::jthread{[this] { run(); }};
   }
 
-  uint64_t uring_sender::total_msgs_sent() const { return total_msgs_completed_.load(std::memory_order_relaxed); }
+  uint64_t uring_sender::total_msgs_sent() const { return total_msgs_sent_.load(std::memory_order_relaxed); }
 
   uint64_t uring_sender::total_bytes_sent() const { return total_bytes_sent_.load(std::memory_order_relaxed); }
 
   void uring_sender::run()
   {
-    auto start_time = std::chrono::steady_clock::now();
-    uint64_t submitted_count = 0;
-    const unsigned cqe_batch_size = 64; // Number of completions to process at once.
+
+    int conn_idx = 0;
 
     while (true)
     {
-      // Determine how many messages should have been sent by now based on the rate.
-      uint64_t expected_sends = submitted_count + 1; // Default to sending as fast as possible.
-      if (interval_.count() > 0)
-      {
-        auto elapsed = std::chrono::steady_clock::now() - start_time;
-        expected_sends = elapsed / interval_;
-      }
+      const auto now = std::chrono::steady_clock::now();
+      const auto expected_msgs = static_cast<std::uint64_t>((now - start_time_) / interval_);
+      // std::cout << interval_.count() << " " << (now - start_time_).count() << " " << expected_msgs << std::endl;
 
-      // Submit new send requests if we are behind schedule.
-      unsigned submitted_this_loop = 0;
-      while (submitted_count < expected_sends)
+      if (msgs_requested_ < expected_msgs)
       {
-        ::io_uring_sqe* sqe = io_uring_get_sqe(&ring_);
-        if (!sqe)
+        if (!is_buffer_full_)
         {
-          // Submission queue is full, break to submit and reap completions.
-          //std::cout << "ops...." << std::endl; 
-          break;
+          void* const buffer_address = buffer_pool_.get_buffer_address(buffer_id_head_ % buffer_pool_.get_buffer_count());
+          const std::size_t buffer_size = buffer_pool_.get_buffer_size();
 
+          auto& sqe = io_ctx_.create_request(send_req_data_);
+          ::io_uring_prep_send(&sqe, sock_.get_fd(), buffer_address, buffer_size, 0);
+          sqe.buf_group = buffer_pool_.get_group_id();
+          sqe.flags |= IOSQE_BUFFER_SELECT;
+          buffer_pool_.reprovide_buffer(buffer_id_head_);
+          
+          auto* data = new uring::io_context::req_data{.handler = on_send_complete, .context = (void *)buffer_id_head_};
+          ::io_uring_sqe_set_data(&sqe, data);
+
+
+          //::io_uring_submit(io_ctx_.get_ring());
+          std::cout << "submit " << buffer_id_head_ << " " << &sqe<< std::endl;
+
+         // buffer_id_head_ = (buffer_id_head_ + 1) % buffer_pool_.get_buffer_count();
+         // is_buffer_full_ = (buffer_id_head_ == buffer_id_tail_);
+        
+         ++buffer_id_head_;
+         is_buffer_full_ = (buffer_id_head_ - buffer_id_tail_ == buffer_pool_.get_buffer_count());
+         ++msgs_requested_;
         }
-
-        io_uring_prep_send_zc_fixed(sqe, 0, iovec_.iov_base, iovec_.iov_len, 0, 0, 0);
-        sqe->flags |= IOSQE_FIXED_FILE; // Use the registered file descriptor.
-        io_uring_sqe_set_data(sqe, nullptr);
-        std::cout << "sent " << iovec_.iov_len << std::endl;
-
-        submitted_count++;
-        submitted_this_loop++;
       }
 
-      // Submit the prepared requests to the kernel.
-      if (submitted_this_loop > 0)
-      {
-        io_uring_submit(&ring_);
-      }
-
-      // Efficiently process a batch of completions.
-      io_uring_cqe* cqe_array[cqe_batch_size];
-      int completions = io_uring_peek_batch_cqe(&ring_, cqe_array, cqe_batch_size);
-
-      if (completions > 0)
-      {
-        for (int i = 0; i < completions; ++i) { on_send_complete(cqe_array[i]); }
-        io_uring_cq_advance(&ring_, completions);
-      }
+      io_ctx_.poll();
     }
   }
 
-  void uring_sender::on_send_complete(io_uring_cqe* cqe)
+  void uring_sender::on_send_complete(const ::io_uring_cqe& cqe, void* context)
   {
-    if (cqe->res < 0)
-    {
-      /* if (cqe->res < iovec_.iov_len) */ { std::cout << "short write " << cqe->res << std::endl; }
+    //auto* self = static_cast<uring_sender*>(context);
 
-      if (cqe->res != -EAGAIN && cqe->res != -ECONNRESET && cqe->res != -EPIPE)
-      {
-        std::cerr << "Sender " << id_ << " send error: " << strerror(-cqe->res) << std::endl;
-      }
-    }
-    else
+    std::cout << "completion " << cqe.res << " " << reinterpret_cast<std::intptr_t>(context) << std::endl;
+
+
+    if (cqe.res < 0)
     {
-      std::cout << "writen " << cqe->res << std::endl;
-      total_bytes_sent_ += cqe->res;
-      total_msgs_completed_++;
+      fprintf(stderr, "Send error on fd %d: %s\n", self->sock_.get_fd(), ::strerror(-cqe.res));
+      return;
+    }
+
+    auto buffer_id = cqe.flags >> IORING_CQE_BUFFER_SHIFT;
+
+    if (buffer_id != self->buffer_id_tail_)
+    {
+      fprintf(stderr, "invalid buffer id %d, expected %d\n", buffer_id, self->buffer_id_tail_);
+      std::terminate();
+    }
+    //std::cout << "completion " << cqe.res << " " << buffer_id << " " << reinterpret_cast<std::intptr_t>(context) << std::endl;
+
+    self->total_msgs_sent_.store(self->total_msgs_sent_.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
+    self->total_bytes_sent_.store(
+      self->total_bytes_sent_.load(std::memory_order_relaxed) + self->buffer_pool_.get_buffer_size(),
+      std::memory_order_relaxed);
+
+    if (cqe.res == self->buffer_pool_.get_buffer_size())
+    {
+      ++self->buffer_id_tail_;
+
+
+   /*    if (++self->buffer_id_tail_ == self->buffer_pool_.get_buffer_count())
+      {
+        self->buffer_id_tail_ = 0;
+      } */
     }
   }
 }

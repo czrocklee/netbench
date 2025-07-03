@@ -1,8 +1,8 @@
 #pragma once
 
-#include "../metric_hud.hpp"
+#include "utility/metric_hud.hpp"
 #include "connection.hpp"
-#include "io_context.hpp"
+#include "bsd/io_context.hpp"
 
 #include <boost/lockfree/spsc_queue.hpp>
 
@@ -35,7 +35,7 @@ namespace bsd
     bool add_connection(bsd::socket&& sock);
     bool post(std::function<void()> task);
 
-    metric_hud::metric get_metrics();
+    utility::metric_hud::metric get_metrics();
 
   private:
     void run();
