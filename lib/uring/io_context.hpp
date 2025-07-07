@@ -19,11 +19,11 @@ namespace uring
     void enable();
 
     void poll();
-    
+
     void poll_wait();
 
     template<typename Rep, typename Period>
-    void run_for(const std::chrono::duration<Rep, Period>& timeout);
+    void run_for(std::chrono::duration<Rep, Period> const& timeout);
 
     void wakeup();
 
@@ -31,8 +31,8 @@ namespace uring
 
     ::io_uring* get_ring() { return &ring_; }
 
-  //private:
-    using handler_type = std::add_pointer<void(const ::io_uring_cqe&, void* context)>::type;
+    // private:
+    using handler_type = std::add_pointer<void(::io_uring_cqe const&, void* context)>::type;
 
     struct req_data
     {
@@ -41,10 +41,10 @@ namespace uring
     };
 
     void setup_wakeup_event();
-    static void on_wakeup(const ::io_uring_cqe& cqe, void* context);
+    static void on_wakeup(::io_uring_cqe const& cqe, void* context);
     void rearm_wakeup_event();
 
-    void run_for_impl(const __kernel_timespec* ts);
+    void run_for_impl(__kernel_timespec const* ts);
 
     ::io_uring_sqe& create_request(req_data& data);
 
@@ -64,7 +64,7 @@ namespace uring
   };
 
   template<typename Rep, typename Period>
-  void io_context::run_for(const std::chrono::duration<Rep, Period>& timeout)
+  void io_context::run_for(std::chrono::duration<Rep, Period> const& timeout)
   {
     auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(timeout);
     ::__kernel_timespec ts = {

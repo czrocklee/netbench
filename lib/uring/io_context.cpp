@@ -94,7 +94,7 @@ namespace uring
     ::io_uring_cq_advance(&ring_, count);
   }
 
-  void io_context::run_for_impl(const __kernel_timespec* ts)
+  void io_context::run_for_impl(__kernel_timespec const* ts)
   {
     ::io_uring_cqe* cqe;
     int ret = ::io_uring_submit_and_wait_timeout(&ring_, &cqe, 1, const_cast<__kernel_timespec*>(ts), nullptr);
@@ -142,9 +142,10 @@ namespace uring
     ::io_uring_prep_read(&sqe, wakeup_fd_, &wakeup_buffer_, sizeof(wakeup_buffer_), 0);
   }
 
-  void io_context::on_wakeup(const ::io_uring_cqe& cqe, void* context)
+  void io_context::on_wakeup(::io_uring_cqe const& cqe, void* context)
   {
     auto* self = static_cast<io_context*>(context);
+
     if (cqe.res < 0)
     {
       // This is a critical error, likely during shutdown.
@@ -171,7 +172,7 @@ namespace uring
     if (data && data->handler)
     {
       data->handler(*cqe, data->context);
-    }   
+    }
   }
 
   ::io_uring_sqe& io_context::create_request(req_data& data)
