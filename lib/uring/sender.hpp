@@ -15,7 +15,7 @@ namespace uring
     {
     }
 
-    void open(bsd::socket&& sock) { sock_ = std::move(sock); }
+    void open(bsd::socket sock) { sock_ = std::move(sock); }
 
     template<typename F>
     void send(F&& f)

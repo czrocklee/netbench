@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../bsd/socket.hpp"
+#include "socket.hpp"
 #include "io_context.hpp"
 #include <functional>
 #include <string>
@@ -11,20 +11,21 @@ namespace bsd
   class acceptor
   {
   public:
-    using on_accept_callback = std::function<void(bsd::socket&&)>;
+    using accept_callback = std::move_only_function<void(std::error_code, bsd::socket)>;
 
-    explicit acceptor(io_context& io_ctx, on_accept_callback on_accept_cb);
+    explicit acceptor(io_context& io_ctx);
 
     void listen(const std::string& address, const std::string& port, int backlog = SOMAXCONN);
-    void start();
+
+    void start(accept_callback accept_cb);
 
   private:
-    static void on_events(uint32_t events, void* context);
+    static void on_events(std::uint32_t events, void* context);
     void handle_events(uint32_t events);
 
     io_context& io_ctx_;
-    bsd::socket listen_sock_;
-    on_accept_callback on_accept_cb_;
+    socket listen_sock_;
+    accept_callback accept_cb_;
     io_context::event_data event_data_;
   };
 }

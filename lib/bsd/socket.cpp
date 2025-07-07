@@ -1,20 +1,25 @@
 #include "socket.hpp"
-#include <cstring>
-#include <stdexcept>
-#include <string>
-#include <system_error>
-#include <utility>
+
 #include <netdb.h>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <netinet/tcp.h> // Required for TCP_NODELAY
+#include <fcntl.h>
+
+#include <cstring>
+#include <errno.h>
 #include <memory>
 #include <string_view>
+#include <stdexcept>
+#include <string>
+#include <system_error>
+#include <utility>
 
 namespace bsd
 {
 
-  socket_exception::socket_exception(const std::string& what) : std::system_error{errno, std::system_category(), what}
+  socket_exception::socket_exception(std::string const& what) : std::system_error{errno, std::system_category(), what}
   {
   }
 
@@ -57,7 +62,7 @@ namespace bsd
     return *this;
   }
 
-  void socket::connect(const std::string& host, const std::string& port)
+  void socket::connect(std::string const& host, std::string const& port)
   {
     ::addrinfo hints{};
     hints.ai_family = AF_UNSPEC;
@@ -69,7 +74,7 @@ namespace bsd
     {
       throw std::runtime_error{std::string{"getaddrinfo failed: "} + gai_strerror(s)};
     }
-    
+
     std::unique_ptr<addrinfo, decltype(&::freeaddrinfo)> result{raw_result, ::freeaddrinfo};
 
     for (auto rp = result.get(); rp != nullptr; rp = rp->ai_next)
@@ -82,7 +87,7 @@ namespace bsd
     throw socket_exception{"connect failed to all addresses"};
   }
 
-  void socket::bind(const std::string& address, const std::string& port)
+  void socket::bind(std::string const& address, std::string const& port)
   {
     ::addrinfo hints{};
     hints.ai_family = AF_UNSPEC;
@@ -90,8 +95,8 @@ namespace bsd
     hints.ai_flags = AI_PASSIVE;
 
     ::addrinfo* raw_result = nullptr;
-    const char* host_cstr = address.empty() ? nullptr : address.c_str();
-    
+    char const* host_cstr = address.empty() ? nullptr : address.c_str();
+
     if (int s = ::getaddrinfo(host_cstr, port.c_str(), &hints, &raw_result); s != 0)
     {
       throw std::runtime_error{std::string{"getaddrinfo failed: "} + gai_strerror(s)};
@@ -106,7 +111,7 @@ namespace bsd
         return;
       }
     }
-    
+
     throw socket_exception{"bind failed"};
   }
 
@@ -118,7 +123,7 @@ namespace bsd
     }
   }
 
-  [[nodiscard]] ssize_t socket::send(const void* data, size_t size, int flags)
+  [[nodiscard]] ssize_t socket::send(void const* data, size_t size, int flags)
   {
     if (auto bytes_sent = ::send(sock_fd_, data, size, flags); bytes_sent < 0)
     {
@@ -132,8 +137,9 @@ namespace bsd
 
   [[nodiscard]] socket socket::accept()
   {
-    sockaddr_storage their_addr{};
-    socklen_t addr_size = sizeof(their_addr);
+    ::sockaddr_storage their_addr{};
+    ::socklen_t addr_size = sizeof(their_addr);
+
     if (int new_fd = ::accept(sock_fd_, reinterpret_cast<sockaddr*>(&their_addr), &addr_size); new_fd < 0)
     {
       throw socket_exception{"accept failed"};
@@ -141,6 +147,40 @@ namespace bsd
     else
     {
       return socket{new_fd};
+    }
+  }
+
+  void socket::set_nodelay(bool enable)
+  {
+    int flag = enable ? 1 : 0;
+
+    if (::setsockopt(sock_fd_, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag)) < 0)
+    {
+      throw socket_exception{"setsockopt TCP_NODELAY failed"};
+    }
+  }
+
+  void socket::set_nonblocking(bool enable)
+  {
+    int flags = ::fcntl(sock_fd_, F_GETFL, 0);
+
+    if (flags < 0)
+    {
+      throw socket_exception{"fcntl F_GETFL failed"};
+    }
+
+    if (enable)
+    {
+      flags |= O_NONBLOCK;
+    }
+    else
+    {
+      flags &= ~O_NONBLOCK;
+    }
+
+    if (::fcntl(sock_fd_, F_SETFL, flags) < 0)
+    {
+      throw socket_exception{"fcntl F_SETFL failed"};
     }
   }
 

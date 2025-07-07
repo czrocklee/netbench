@@ -51,6 +51,9 @@ namespace bsd
     socket accept();
     int get_fd() const { return sock_fd_; }
 
+    void set_nodelay(bool enable);
+    void set_nonblocking(bool enable);
+
   private:
     int sock_fd_;
   };

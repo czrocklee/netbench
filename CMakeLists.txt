@@ -16,25 +16,29 @@ find_package(Boost REQUIRED COMPONENTS headers)
 
 add_subdirectory(lib)
 
-# --- Executables ---
-# Define the executable targets and their sources
-add_executable(bsd_server
-    app/bsd/main.cpp
-    app/bsd/receiver.cpp
-    app/bsd/connection.cpp
+set(RECEIVER_SOURCES
+    app/receiver/main.cpp
+    app/receiver/worker.cpp
 )
-target_link_libraries(bsd_server PRIVATE bsd_lib utility_lib CLI11::CLI11 Boost::headers)
+add_executable(uring_receiver ${RECEIVER_SOURCES})
+target_compile_definitions(uring_receiver PRIVATE IO_URING_API)
+target_link_libraries(uring_receiver PRIVATE uring_lib utility_lib CLI11::CLI11)
 
-add_executable(asio_client app/asio/asio_client.cpp)
 
-add_executable(asio_perf app/asio/asio_perf_test.cpp)
+add_executable(bsd_receiver ${RECEIVER_SOURCES})
+target_compile_definitions(bsd_receiver PRIVATE BSD_API)
+target_link_libraries(bsd_receiver PRIVATE bsd_lib utility_lib CLI11::CLI11)
 
-add_executable(uring_server
-    app/uring/main.cpp
-    app/uring/receiver.cpp
-)
+#add_executable(asio_client app/asio/asio_client.cpp)
 
-target_link_libraries(uring_server PRIVATE uring_lib utility_lib Boost::headers)
+#add_executable(asio_perf app/asio/asio_perf_test.cpp)
+
+#add_executable(uring_server
+#    app/receiver/main.cpp
+#   app/receiver/worker.cpp
+#)
+
+#target_link_libraries(uring_server PRIVATE uring_lib utility_lib Boost::headers)
 
 add_executable(client app/client/main.cpp)
 target_link_libraries(client PRIVATE bsd_lib utility_lib CLI11::CLI11)

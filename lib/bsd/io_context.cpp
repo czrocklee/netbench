@@ -44,14 +44,14 @@ namespace bsd
   {
     uint64_t val;
     // Drain the eventfd to reset its state.
-    [[maybe_unused]] ::read(wakeup_fd_, &val, sizeof(val));
+    std::ignore = ::read(wakeup_fd_, &val, sizeof(val));
   }
 
   void io_context::wakeup()
   {
     uint64_t val = 1;
     // A write to the eventfd will trigger an EPOLLIN event.
-    [[maybe_unused]] ::write(wakeup_fd_, &val, sizeof(val));
+    std::ignore = ::write(wakeup_fd_, &val, sizeof(val));
   }
 
   void io_context::add(int fd, uint32_t events, event_data* data)
@@ -60,7 +60,7 @@ namespace bsd
     event.events = events;
     event.data.ptr = data;
 
-    if (epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, fd, &event) == -1)
+    if (::epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, fd, &event) == -1)
     {
       throw std::system_error(errno, std::system_category(), "epoll_ctl ADD failed");
     }
@@ -72,7 +72,7 @@ namespace bsd
     event.events = events;
     event.data.ptr = data;
 
-    if (epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, fd, &event) == -1)
+    if (::epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, fd, &event) == -1)
     {
       throw std::system_error(errno, std::system_category(), "epoll_ctl MOD failed");
     }
@@ -81,14 +81,16 @@ namespace bsd
   void io_context::remove(int fd)
   {
     // It's okay if the fd is already closed/removed, so we don't check for errors.
-    epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr);
+    ::epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr);
   }
 
-  void io_context::poll() { run_for(std::chrono::milliseconds{-1}); }
+  void io_context::poll() { run_for(std::chrono::milliseconds{0}); }
 
-  void io_context::run_for(const std::chrono::milliseconds& timeout)
+  void io_context::poll_wait() { run_for(std::chrono::milliseconds{-1}); }
+
+  void io_context::run_for(std::chrono::milliseconds const& timeout)
   {
-    int num_events = epoll_wait(epoll_fd_, events_.data(), events_.size(), timeout.count());
+    int num_events = ::epoll_wait(epoll_fd_, events_.data(), events_.size(), timeout.count());
 
     if (num_events == -1)
     {
@@ -96,7 +98,7 @@ namespace bsd
       {
         return;
       } // Interrupted by a signal, safe to continue.
-      
+
       throw std::system_error(errno, std::system_category(), "epoll_wait failed");
     }
 
