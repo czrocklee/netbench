@@ -7,12 +7,8 @@ worker::worker(config cfg)
     io_ctx_{config_.uring_depth, config_.params},
     buffer_pool_{io_ctx_, config_.buffer_count, config_.buffer_size, config_.buffer_group_id},
 #elifdef ASIO_API
-#ifdef ASIO_HAS_IO_URING
-    io_ctx_{asio::io_uring_context{asio::io_uring_context::params{.entries = 1024}}.get_executor()}, // Set to a reasonable value
-#else
     work_guard_{::asio::make_work_guard(io_ctx_)},
-#endif // ASIO_HAS_IO_URING
-#else  // BSD_API
+#else // BSD_API
     io_ctx_{1},
 #endif
     pending_task_queue_{128}
