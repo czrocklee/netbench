@@ -50,6 +50,7 @@ namespace bsd
 
     socket accept();
     int get_fd() const { return sock_fd_; }
+    int native_handle() const { return sock_fd_; }
 
     void set_nodelay(bool enable);
     void set_nonblocking(bool enable);

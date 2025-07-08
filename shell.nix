@@ -14,32 +14,20 @@ let
   hdrhistogram-c-lib = pkgs.stdenv.mkDerivation {
     pname = "hdrhistogram-c";
     version = "0.11.5"; # A specific version/tag from GitHub
-
-    # Fetch the source code directly from GitHub.
     src = pkgs.fetchFromGitHub {
       owner = "HdrHistogram";
       repo = "HdrHistogram_c";
       rev = "0.11.5"; # The git tag or commit hash to use
-      # This hash ensures the source code is what we expect.
-      # It's a security and reproducibility feature.
       sha256 = "sha256-29if+0H8wdpQBN48lt0ylGgtUCv/tJYZnG5LzcIqXDs=";
     };
-
-    # The library uses cmake, so we need it as a build tool.
     nativeBuildInputs = [ pkgs.cmake ];
-
-    # It also needs the zlib library to build its log support.
     buildInputs = [ pkgs.zlib ];
-
-    # We can pass flags to cmake, e.g., to disable building the example programs.
     cmakeFlags = [ "-DHDR_HISTOGRAM_BUILD_PROGRAMS=OFF" ];
   };
 
   liburing-lib = pkgs.stdenv.mkDerivation {
     pname = "liburing";
     version = "2.11"; # A specific version/tag from GitHub
-
-    # Fetch the source code directly from GitHub.
     src = pkgs.fetchFromGitHub {
       owner = "axboe";
       repo = "liburing";
@@ -48,15 +36,23 @@ let
       # It's a security and reproducibility feature.
       sha256 = "sha256-V73QP89WMrL2fkPRbo/TSkfO7GeDsCudlw2Ut5baDzA=";
     };
+  };
 
-    # The library uses cmake, so we need it as a build tool.
-    # nativeBuildInputs = [ pkgs.cmake ];
-
-    # It also needs the zlib library to build its log support.
-    # buildInputs = [ pkgs.zlib ];
-
-    # We can pass flags to cmake, e.g., to disable building the example programs.
-    # cmakeFlags = [ "-DHDR_HISTOGRAM_BUILD_PROGRAMS=OFF" ];
+  asio-lib = pkgs.stdenv.mkDerivation {
+    pname = "asio";
+    version = "1.34.2"; # A specific version/tag from GitHub
+    src = pkgs.fetchFromGitHub {
+      owner = "chriskohlhoff";
+      repo = "asio";
+      rev = "asio-1-34-2"; # The git tag or commit hash to use
+      sha256 = "sha256-B9tFXcmBn7n4wEdnfjw5o90fC/cG5+WMdu/K4T6Y+jI=";
+    };
+    installPhase = ''
+      runHook preInstall
+      mkdir -p $out/include
+      cp -r $src/asio/include/* $out/include/
+      runHook postInstall
+    '';
   };
 
 in 
@@ -69,13 +65,13 @@ in
       ninja
       gcc
       gdb
-      asio
       boost.dev
       #liburing
       mimalloc
       cli11
       hdrhistogram-c-lib
       liburing-lib
+      asio-lib
     ];
     shellHook = ''
       echo "Using nixpkgs pinned to NixOS 25.05 (stable release)"
