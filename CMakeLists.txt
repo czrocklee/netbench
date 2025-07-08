@@ -53,7 +53,7 @@ target_link_libraries(client PRIVATE bsd_lib utility_lib CLI11::CLI11)
 add_executable(uring_client app/client/uring.cpp app/client/uring_sender.cpp)
 target_link_libraries(uring_client PRIVATE uring_lib utility_lib CLI11::CLI11)
 
-
+add_executable(syscall_overhead tool/syscall_overhead.c)
 
 # For example, if you're using Boost.Asio:
 # find_package(Boost REQUIRED COMPONENTS system)
