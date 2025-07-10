@@ -27,6 +27,8 @@ namespace uring
 
     void reprovide_buffer(std::uint16_t buffer_id);
 
+    void reprovide_buffers(std::uint16_t buffer_id_begin, std::uint16_t buffer_id_end);
+
     std::uint8_t* get_buffer_address(std::uint16_t buffer_id) const;
 
     std::uint16_t get_group_id() const { return group_id_; }

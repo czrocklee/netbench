@@ -30,11 +30,11 @@ public:
     for (int i = 0; i < conns; ++i) { conns_.emplace_back(id * 1000 + i); }
   }
 
-  void start(const std::string& host, const std::string& port, int msg_size)
+  void start(std::string const& host, std::string const& port, std::string const& bind_address, int msg_size, bool nodelay)
   {
     message_.resize(msg_size, std::byte{'a'});
 
-    for (auto& conn : conns_) { conn.connect(host, port); }
+    for (auto& conn : conns_) { conn.connect(host, port, bind_address); conn.set_nodelay(nodelay); }
 
     static std::random_device rd;
     start_time_ = std::chrono::steady_clock::now() +
@@ -52,13 +52,13 @@ private:
 
     while (true)
     {
-      const auto now = std::chrono::steady_clock::now();
-      const auto expected_msgs = static_cast<std::uint64_t>((now - start_time_) / interval_);
-      //std::cout << interval_.count() << " " << (now - start_time_).count() << " " << expected_msgs << std::endl;
+      auto const now = std::chrono::steady_clock::now();
+      auto const expected_msgs = static_cast<std::uint64_t>((now - start_time_) / interval_);
+      // std::cout << interval_.count() << " " << (now - start_time_).count() << " " << expected_msgs << std::endl;
 
       if (msgs_sent_ < expected_msgs)
       {
-        conns_[conn_idx++].send(reinterpret_cast<const char*>(message_.data()), message_.size());
+        conns_[conn_idx++].send(reinterpret_cast<char const*>(message_.data()), message_.size());
         total_msgs_sent_.store(total_msgs_sent_.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
         ++msgs_sent_;
 
@@ -73,7 +73,7 @@ private:
   std::vector<connection> conns_;
   std::vector<std::byte> message_;
   std::jthread _thread;
-  const std::chrono::steady_clock::duration interval_;
+  std::chrono::steady_clock::duration const interval_;
   std::chrono::steady_clock::time_point start_time_;
   std::uint64_t msgs_sent_ = 0;
   std::atomic<std::uint64_t> total_msgs_sent_ = 0;

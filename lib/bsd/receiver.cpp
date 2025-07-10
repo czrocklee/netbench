@@ -48,6 +48,7 @@ namespace bsd
 
   void receiver::do_read()
   {
+    std::size_t bytes_read = 0;
 
     while (true)
     {
@@ -56,10 +57,21 @@ namespace bsd
       if (n > 0)
       {
         data_cb_({}, ::asio::const_buffer{buffer_.data(), static_cast<size_t>(n)});
+
+        if (read_limit_ > 0)
+        {
+          if ((bytes_read += n) >= read_limit_)
+          {
+            // Stop reading if the read limit is reached, rearm the socket for future read
+            io_ctx_.modify(sock_.get_fd(), EPOLLIN | EPOLLERR | EPOLLET, &event_data_);
+            break;
+          }
+        }
       }
       else if (n == 0)
       {
         data_cb_(::asio::error::make_error_code(::asio::error::eof), {});
+        break;
       }
       else
       {

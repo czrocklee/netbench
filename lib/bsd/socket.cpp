@@ -89,30 +89,25 @@ namespace bsd
 
   void socket::bind(std::string const& address, std::string const& port)
   {
-    ::addrinfo hints{};
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = AI_PASSIVE;
+    int port_num = std::stoi(port);
 
-    ::addrinfo* raw_result = nullptr;
-    char const* host_cstr = address.empty() ? nullptr : address.c_str();
+    ::sockaddr_in addr4{};
+    addr4.sin_family = AF_INET;
+    addr4.sin_port = htons(port_num);
 
-    if (int s = ::getaddrinfo(host_cstr, port.c_str(), &hints, &raw_result); s != 0)
+    if (address.empty() || address == "0.0.0.0")
     {
-      throw std::runtime_error{std::string{"getaddrinfo failed: "} + gai_strerror(s)};
+      addr4.sin_addr.s_addr = INADDR_ANY;
     }
-
-    std::unique_ptr<addrinfo, decltype(&::freeaddrinfo)> result{raw_result, ::freeaddrinfo};
-
-    for (auto rp = result.get(); rp != nullptr; rp = rp->ai_next)
+    else if (::inet_pton(AF_INET, address.c_str(), &addr4.sin_addr) != 1)
     {
-      if (::bind(sock_fd_, rp->ai_addr, rp->ai_addrlen) == 0)
-      {
-        return;
-      }
+      throw std::runtime_error{"Invalid IPv4 address"};
     }
-
-    throw socket_exception{"bind failed"};
+    
+    if (::bind(sock_fd_, reinterpret_cast<sockaddr*>(&addr4), sizeof(addr4)) < 0)
+    {
+      throw socket_exception{"bind failed"};
+    }
   }
 
   void socket::listen(int backlog)

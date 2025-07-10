@@ -32,6 +32,14 @@ add_executable(asio_uring_receiver ${RECEIVER_SOURCES})
 target_compile_definitions(asio_uring_receiver PRIVATE ASIO_API ASIO_STANDALONE ASIO_NO_DEPRECATED ASIO_HAS_IO_URING ASIO_DISABLE_EPOLL)
 target_link_libraries(asio_uring_receiver PRIVATE utility_lib CLI11::CLI11 uring)
 
+add_executable(asio_ioctx_mt_receiver app/receiver/worker.cpp app/receiver/asio_ioctx_mt.cpp)
+target_compile_definitions(asio_ioctx_mt_receiver PRIVATE ASIO_API ASIO_STANDALONE ASIO_NO_DEPRECATED)
+target_link_libraries(asio_ioctx_mt_receiver PRIVATE utility_lib CLI11::CLI11)
+
+add_executable(asio_uring_ioctx_mt_receiver app/receiver/worker.cpp app/receiver/asio_ioctx_mt.cpp)
+target_compile_definitions(asio_uring_ioctx_mt_receiver PRIVATE ASIO_API ASIO_STANDALONE ASIO_NO_DEPRECATED ASIO_HAS_IO_URING ASIO_DISABLE_EPOLL)
+target_link_libraries(asio_uring_ioctx_mt_receiver PRIVATE utility_lib CLI11::CLI11 uring)
+
 add_executable(bsd_receiver ${RECEIVER_SOURCES})
 target_compile_definitions(bsd_receiver PRIVATE BSD_API)
 target_link_libraries(bsd_receiver PRIVATE bsd_lib utility_lib CLI11::CLI11)

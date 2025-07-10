@@ -35,21 +35,24 @@ namespace
 
 int main(int argc, char** argv)
 {
-  CLI::App app{"C++ TCP io_uring Multi-threaded Echo Server"};
+  CLI::App app{"C++ TCP receiver"};
 
   std::string address_str;
   app.add_option("-a,--address", address_str, "Target address in host:port format")->default_val("0.0.0.0:8080");
 
-  unsigned buffer_size;
-  app.add_option("-s,--buffer-size", buffer_size, "Size of each receive buffer in bytes")->default_val(1024);
+  worker::config cfg;
+  app.add_option("-s,--buffer-size", cfg.buffer_size, "Size of each receive buffer in bytes")->default_val(1024);
 
 #ifdef IO_URING_API
-  unsigned buffer_count;
-  app.add_option("-c,--buffer-count", buffer_count, "Number of buffers in pool prepared for each worker")
+  app.add_option("-c,--buffer-count", cfg.buffer_count, "Number of buffers in pool prepared for each worker")
     ->default_val(2048);
 
-  unsigned uring_depth;
-  app.add_option("-d,--uring-depth", uring_depth, "io_uring queue depth")->default_val(512);
+  app.add_option("-c,--buffer-count", cfg.buffer_count, "Number of buffers in pool prepared for each worker")
+    ->default_val(2048);
+
+  app.add_option("-d,--uring-depth", cfg.uring_depth, "io_uring queue depth")->default_val(512);
+#elifdef BSD_API
+  app.add_option("-l,--read-limit", cfg.read_limit, "Optional read limit for BSD API (0 for no limit)")->default_val(1024 * 64);
 #endif
 
   unsigned num_workers;
@@ -74,7 +77,7 @@ int main(int argc, char** argv)
     std::vector<std::unique_ptr<worker>> workers;
     std::cout << "Starting " << num_workers << " worker threads on " << address_str << "..." << std::endl;
 
-    net::io_context io_ctx{128};
+    net::io_context io_ctx{};
 
     for (auto i = 0u; i < num_workers; ++i)
     {
@@ -83,17 +86,11 @@ int main(int argc, char** argv)
       params.cq_entries = 65536;
       params.flags |= IORING_SETUP_R_DISABLED;
       params.flags |= IORING_SETUP_SINGLE_ISSUER;
-      // params.flags |= IORING_SETUP_DEFER_TASKRUN;
-      // params.flags |= IORING_SETUP_COOP_TASKRUN;
+      //params.flags |= IORING_SETUP_DEFER_TASKRUN;
+      params.flags |= IORING_SETUP_COOP_TASKRUN;
 
-      worker::config cfg = {
-        .buffer_size = buffer_size,
-        .uring_depth = uring_depth,
-        .buffer_count = buffer_count,
-        .buffer_group_id = static_cast<std::uint16_t>(i),
-        .params = params};
-#else // BSD_API
-      worker::config cfg = {.buffer_size = buffer_size};
+      cfg.buffer_group_id = static_cast<std::uint16_t>(i);
+      cfg.params = params;
 #endif
 
       workers.emplace_back(std::make_unique<worker>(cfg))->start();

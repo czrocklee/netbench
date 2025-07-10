@@ -13,17 +13,23 @@ int main(int argc, char** argv)
   std::string address;
   app.add_option("-a,--address", address, "Target address")->default_val("127.0.0.1:19004");
 
+  std::string bind_address;
+  app.add_option("-b,--bind-address", bind_address, "Bind address")->default_val("");
+
   int conns = 1;
   app.add_option("-c,--conns", conns, "Number of connections per sender")->default_val(1);
 
   int senders = 1;
   app.add_option("-s,--senders", senders, "Number of senders")->default_val(1);
 
-  int msgs_per_sec = 1000;
+  int msgs_per_sec;
   app.add_option("-m,--msgs-per-sec", msgs_per_sec, "Messages per second per sender")->default_val(1000);
 
-  int msg_size = 1024;
-  app.add_option("-z,--msg-size", msg_size, "Message size in bytes")->default_val(1024);
+  int msg_size;
+    app.add_option("-z,--msg-size", msg_size, "Message size in bytes")->default_val(1024);
+
+  bool nodelay;
+  app.add_option("-n,--nodelay", nodelay, "Enable TCP_NODELAY")->default_val(false);
 
   CLI11_PARSE(app, argc, argv);
 
@@ -51,7 +57,7 @@ int main(int argc, char** argv)
 
   for (auto i = 0; i < senders; ++i) { ss.emplace_back(i, conns, msgs_per_sec / senders); }
 
-  for (auto& s : ss) { s.start(host, port, msg_size); }
+  for (auto& s : ss) { s.start(host, port, bind_address, msg_size, nodelay); }
 
   auto collect_metric = [&] {
     auto total_msgs_sent =

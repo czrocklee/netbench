@@ -33,7 +33,9 @@ public:
     unsigned buffer_count;
     uint16_t buffer_group_id;
     ::io_uring_params params{};
-#endif
+#elifdef BSD_API
+    unsigned read_limit = 0;
+#endif 
   };
 
   explicit worker(config cfg);

@@ -15,11 +15,13 @@ namespace bsd
   public:
     using data_callback = std::function<void(std::error_code, ::asio::const_buffer)>;
 
-    explicit receiver(io_context& io_ctx, size_t buffer_size);
+    explicit receiver(io_context& io_ctx, std::size_t buffer_size);
 
     void open(bsd::socket sock);
 
     void start(data_callback&& cb);
+
+    void set_read_limit(std::size_t limit) { read_limit_ = limit; }
 
   private:
     static void on_events(uint32_t events, void* context);
@@ -30,6 +32,7 @@ namespace bsd
     bsd::socket sock_;
     std::vector<char> buffer_;
     data_callback data_cb_;
+    std::size_t read_limit_ = 0;
     io_context::event_data event_data_;
   };
 }

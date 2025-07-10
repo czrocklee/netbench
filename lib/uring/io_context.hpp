@@ -12,7 +12,7 @@ namespace uring
   public:
     ~io_context();
 
-    explicit io_context(unsigned entries);
+    explicit io_context(unsigned entries = 1024);
 
     io_context(unsigned entries, ::io_uring_params& params);
 

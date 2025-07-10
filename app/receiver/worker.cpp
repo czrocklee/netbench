@@ -7,9 +7,8 @@ worker::worker(config cfg)
     io_ctx_{config_.uring_depth, config_.params},
     buffer_pool_{io_ctx_, config_.buffer_count, config_.buffer_size, config_.buffer_group_id},
 #elifdef ASIO_API
-    work_guard_{::asio::make_work_guard(io_ctx_)},
-#else // BSD_API
     io_ctx_{1},
+    work_guard_{::asio::make_work_guard(io_ctx_)},
 #endif
     pending_task_queue_{128}
 {
@@ -31,7 +30,11 @@ void worker::stop()
 
   if (thread_.joinable())
   {
-    // io_ctx_.wakeup();
+#ifndef ASIO_API
+    io_ctx_.wakeup();
+#else // ASIO_API
+    io_ctx_.stop();
+#endif
     thread_.join();
     std::cout << "worker thread " << std::this_thread::get_id() << " joined." << std::endl;
   }
@@ -43,8 +46,12 @@ void worker::add_connection(net::socket sock)
   {
 #ifdef IO_URING_API
     auto iter = connections_.emplace(connections_.begin(), io_ctx_, buffer_pool_);
-#else // BSD_API
+#else
     auto iter = connections_.emplace(connections_.begin(), io_ctx_, config_.buffer_size);
+#endif
+
+#ifdef BSD_API
+    iter->set_read_limit(config_.read_limit);
 #endif
     iter->open(std::move(sock));
     iter->start([this, iter](std::error_code ec, asio::const_buffer data) {
@@ -68,13 +75,17 @@ void worker::add_connection(net::socket sock)
 
 bool worker::post(std::move_only_function<void()> task)
 {
+#ifndef ASIO_API
   if (!pending_task_queue_.push(std::move(task)))
   {
     std::cerr << "worker " << std::this_thread::get_id() << "task queue is full" << std::endl;
     return false;
   }
 
-  // io_ctx_.wakeup();
+  io_ctx_.wakeup();
+#else  // ASIO_API
+  ::asio::post(io_ctx_, std::move(task));
+#endif // ASIO_API
   return true;
 }
 
@@ -93,15 +104,15 @@ void worker::run()
 
   try
   {
+#ifdef ASIO_API
+    io_ctx_.run();
+#else
     while (!stop_flag_.load(std::memory_order::relaxed))
     {
-#ifdef ASIO_API
-      io_ctx_.poll_one();
-#else
-      io_ctx_.poll();
-#endif
+      io_ctx_.poll_wait();
       process_pending_tasks();
     }
+#endif
   }
   catch (std::exception const& e)
   {

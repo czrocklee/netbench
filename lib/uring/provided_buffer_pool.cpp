@@ -84,6 +84,35 @@ namespace uring
     }
   }
 
+  void provided_buffer_pool::reprovide_buffers(std::uint16_t buffer_id_begin, std::uint16_t buffer_id_end)
+  {
+    if (buffer_id_end > buffer_id_begin)
+    {
+      for (std::uint16_t i = buffer_id_begin; i < buffer_id_end; ++i)
+      {
+        ::io_uring_buf_ring_add(
+          buf_ring_, get_buffer_address(i), buffer_size_, i, ::io_uring_buf_ring_mask(buffer_count_), 0);
+      }
+
+      ::io_uring_buf_ring_advance(buf_ring_, buffer_id_end - buffer_id_begin);
+      return;
+    }
+
+    for (std::uint16_t i = buffer_id_begin; i < buffer_count_; ++i)
+    {
+      ::io_uring_buf_ring_add(
+        buf_ring_, get_buffer_address(i), buffer_size_, i, ::io_uring_buf_ring_mask(buffer_count_), 0);
+    }
+
+    for (std::uint16_t i = 0; i < buffer_id_end; ++i)
+    {
+      ::io_uring_buf_ring_add(
+        buf_ring_, get_buffer_address(i), buffer_size_, i, ::io_uring_buf_ring_mask(buffer_count_), 0);
+    }
+
+    ::io_uring_buf_ring_advance(buf_ring_, buffer_count_ - buffer_id_begin + buffer_id_end);
+  }
+
   std::uint8_t* provided_buffer_pool::get_buffer_address(std::uint16_t buffer_id) const
   {
     if (buffer_id >= buffer_count_)
