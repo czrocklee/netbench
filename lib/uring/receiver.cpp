@@ -36,13 +36,14 @@ namespace uring
       return;
     }
 
+    using buffer_id_type = provided_buffer_pool::buffer_id_type;
     std::size_t bytes_received = static_cast<std::size_t>(cqe.res);
-    int buffer_id = cqe.flags >> IORING_CQE_BUFFER_SHIFT;
-    uint8_t* buffer = self->buffer_pool_.get_buffer_address(buffer_id);
+    auto buf_id = buffer_id_type{static_cast<buffer_id_type::value_type>(cqe.flags >> IORING_CQE_BUFFER_SHIFT)};
+    std::byte* buffer = self->buffer_pool_.get_buffer_address(buf_id);
 
     self->data_cb_({}, ::asio::const_buffer{buffer, bytes_received});
 
-    self->buffer_pool_.reprovide_buffer(buffer_id);
+    self->buffer_pool_.push_buffer(buf_id);
 
     if (!(cqe.flags & IORING_CQE_F_MORE))
     {

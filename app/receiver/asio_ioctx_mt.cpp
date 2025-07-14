@@ -40,8 +40,8 @@ namespace
   struct connection
   {
     net::receiver receiver;
-    std::atomic<std::uint64_t> msgs_received{0};
-    std::atomic<std::uint64_t> bytes_received{0};
+    std::atomic<std::uint64_t> ops{0};
+    std::atomic<std::uint64_t> bytes{0};
 
     connection(net::io_context& io_ctx, std::size_t buffer_size) : receiver(io_ctx, buffer_size) {}
   };
@@ -78,7 +78,7 @@ int main(int argc, char** argv)
 
     std::list<connection> conns;
     std::mutex conns_lock;
-    std::atomic<std::uint64_t> total_msgs_received{0};
+    std::atomic<std::uint64_t> total_ops_received{0};
     std::atomic<std::uint64_t> total_bytes_received{0};
 
     net::io_context io_ctx{};
@@ -110,8 +110,8 @@ int main(int argc, char** argv)
         }
 
         std::size_t bytes_received = data.size();
-        iter->msgs_received.store(iter->msgs_received.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
-        iter->bytes_received.store(iter->bytes_received.load(std::memory_order_relaxed) + bytes_received, std::memory_order_relaxed);
+        iter->ops.store(iter->ops.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
+        iter->bytes.store(iter->bytes.load(std::memory_order_relaxed) + bytes_received, std::memory_order_relaxed);
       });
     });
 
@@ -131,8 +131,8 @@ int main(int argc, char** argv)
       std::lock_guard<std::mutex> lg{conns_lock};
       for (auto const& conn : conns)
       {
-        total_metric.msgs += conn.msgs_received.load(std::memory_order_relaxed);
-        total_metric.bytes += conn.bytes_received.load(std::memory_order_relaxed);
+        total_metric.ops += conn.ops.load(std::memory_order_relaxed);
+        total_metric.bytes += conn.bytes.load(std::memory_order_relaxed);
       }
 
       return total_metric;

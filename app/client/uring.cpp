@@ -14,6 +14,9 @@ int main(int argc, char** argv)
   int senders = 1;
   app.add_option("-s,--senders", senders, "Number of senders")->default_val(1);
 
+  int conns = 1;
+  app.add_option("-c,--conns", conns, "Number of connections per sender")->default_val(1);
+
   int msgs_per_sec = 1000;
   app.add_option("-m,--msgs-per-sec", msgs_per_sec, "Messages per second per sender (0 for max)")->default_val(1000);
 
@@ -46,7 +49,7 @@ int main(int argc, char** argv)
   {
     try
     {
-      sender_list.emplace_back(std::make_unique<client::uring_sender>(i, host, port, msg_size, msgs_per_sec));
+      sender_list.emplace_back(std::make_unique<client::uring_sender>(i, conns, host, port, msg_size, msgs_per_sec));
     }
     catch (const std::exception& e)
     {
@@ -58,11 +61,9 @@ int main(int argc, char** argv)
   for (auto& s : sender_list) { s->start(); }
 
   auto collect_metric = [&]() {
-    auto total_msgs = std::accumulate(
+    auto total_ops = std::accumulate(
       sender_list.begin(), sender_list.end(), 0ul, [](auto count, auto& s) { return count + s->total_msgs_sent(); });
-    auto total_bytes = std::accumulate(
-      sender_list.begin(), sender_list.end(), 0ul, [](auto count, auto& s) { return count + s->total_bytes_sent(); });
-    return utility::metric_hud::metric{.msgs = total_msgs, .bytes = total_bytes};
+    return utility::metric_hud::metric{.ops = total_ops, .bytes = total_ops * msg_size};
   };
 
   utility::metric_hud hud{std::chrono::seconds{5}, collect_metric};

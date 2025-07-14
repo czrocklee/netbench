@@ -30,11 +30,16 @@ public:
     for (int i = 0; i < conns; ++i) { conns_.emplace_back(id * 1000 + i); }
   }
 
-  void start(std::string const& host, std::string const& port, std::string const& bind_address, int msg_size, bool nodelay)
+  void
+  start(std::string const& host, std::string const& port, std::string const& bind_address, int msg_size, bool nodelay)
   {
     message_.resize(msg_size, std::byte{'a'});
 
-    for (auto& conn : conns_) { conn.connect(host, port, bind_address); conn.set_nodelay(nodelay); }
+    for (auto& conn : conns_)
+    {
+      conn.connect(host, port, bind_address);
+      conn.set_nodelay(nodelay);
+    }
 
     static std::random_device rd;
     start_time_ = std::chrono::steady_clock::now() +
@@ -58,9 +63,11 @@ private:
 
       if (msgs_sent_ < expected_msgs)
       {
-        conns_[conn_idx++].send(reinterpret_cast<char const*>(message_.data()), message_.size());
-        total_msgs_sent_.store(total_msgs_sent_.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
-        ++msgs_sent_;
+        if (conns_[conn_idx++].send(reinterpret_cast<char const*>(message_.data()), message_.size()))
+        {
+          total_msgs_sent_.store(total_msgs_sent_.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
+          ++msgs_sent_;
+        }
 
         if (conn_idx == conns_.size())
         {

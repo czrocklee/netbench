@@ -47,12 +47,10 @@ int main(int argc, char** argv)
   app.add_option("-c,--buffer-count", cfg.buffer_count, "Number of buffers in pool prepared for each worker")
     ->default_val(2048);
 
-  app.add_option("-c,--buffer-count", cfg.buffer_count, "Number of buffers in pool prepared for each worker")
-    ->default_val(2048);
-
   app.add_option("-d,--uring-depth", cfg.uring_depth, "io_uring queue depth")->default_val(512);
 #elifdef BSD_API
-  app.add_option("-l,--read-limit", cfg.read_limit, "Optional read limit for BSD API (0 for no limit)")->default_val(1024 * 64);
+  app.add_option("-l,--read-limit", cfg.read_limit, "Optional read limit for BSD API (0 for no limit)")
+    ->default_val(1024 * 64);
 #endif
 
   unsigned num_workers;
@@ -86,7 +84,7 @@ int main(int argc, char** argv)
       params.cq_entries = 65536;
       params.flags |= IORING_SETUP_R_DISABLED;
       params.flags |= IORING_SETUP_SINGLE_ISSUER;
-      //params.flags |= IORING_SETUP_DEFER_TASKRUN;
+      // params.flags |= IORING_SETUP_DEFER_TASKRUN;
       params.flags |= IORING_SETUP_COOP_TASKRUN;
 
       cfg.buffer_group_id = static_cast<std::uint16_t>(i);
@@ -107,7 +105,7 @@ int main(int argc, char** argv)
 
       int accepted_fd = new_sock.native_handle();
       auto& worker = workers[next_worker_idx];
-      
+
       if (!worker->post([&worker, sock = std::move(new_sock)]() mutable { worker->add_connection(std::move(sock)); }))
       {
         std::cerr << "Main thread FAILED to hand off fd " << accepted_fd << " to worker " << next_worker_idx
@@ -136,7 +134,7 @@ int main(int argc, char** argv)
       for (auto& f : futures)
       {
         auto m = f.get();
-        total_metric.msgs += m.msgs;
+        total_metric.ops += m.ops;
         total_metric.bytes += m.bytes;
       }
 

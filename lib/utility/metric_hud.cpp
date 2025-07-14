@@ -18,7 +18,7 @@ namespace utility
         return ss.str();
       }
 
-      const char* suffixes[] = {"", "k", "M", "G", "T"};
+      char const* suffixes[] = {"", "k", "M", "G", "T"};
       int suffix_index = 0;
       double temp_value = value;
 
@@ -36,7 +36,7 @@ namespace utility
 
   void metric_hud::tick()
   {
-    const auto now = std::chrono::steady_clock::now();
+    auto const now = std::chrono::steady_clock::now();
 
     // Only update if the interval has passed, or if it's the very first tick
     if (start_time_ == std::chrono::steady_clock::time_point{} || (now - last_time_checked_ >= interval_))
@@ -47,29 +47,33 @@ namespace utility
         start_time_ = now;
       }
 
-      const auto metric = action_();
+      auto const metric = action_();
 
-      const auto elapsed_total_time = std::chrono::duration<double>(now - start_time_).count();
-      const auto total_msg_rate = metric.msgs / elapsed_total_time;
-      const auto total_throughput = metric.bytes / elapsed_total_time;
+      auto const elapsed_total_time = std::chrono::duration<double>(now - start_time_).count();
+      auto const total_op_rate = metric.ops / elapsed_total_time;
+      auto const total_throughput = metric.bytes / elapsed_total_time;
 
-      std::cout << "total rate\t: " << pretty_print(total_msg_rate) << " msgs/s, throughput: \t"
-                << pretty_print(total_throughput) << " bytes/s" << std::endl;
+      std::cout << "total rate:\t" << pretty_print(total_op_rate) << " ops/s \tthroughput: \t"
+                << pretty_print(total_throughput)
+                << " bytes/s \tunit:\t" << pretty_print(total_throughput / total_op_rate) << " bytes/op" << std::endl;
 
       // Calculate and print current rate (since last check)
-      const auto elapsed_since_last_check = std::chrono::duration<double>(now - last_time_checked_).count();
+      auto const elapsed_since_last_check = std::chrono::duration<double>(now - last_time_checked_).count();
       if (elapsed_since_last_check > 0) // Avoid division by zero if interval is too small or first tick
       {
-        const auto current_msg_rate = (metric.msgs - last_metric_.msgs) / elapsed_since_last_check;
-        const auto current_throughput = (metric.bytes - last_metric_.bytes) / elapsed_since_last_check;
+        auto const current_op_rate = (metric.ops - last_metric_.ops) / elapsed_since_last_check;
+        auto const current_throughput = (metric.bytes - last_metric_.bytes) / elapsed_since_last_check;
 
-        std::cout << "current rate:\t" << pretty_print(current_msg_rate) << " msgs/s, throughput: \t"
-                  << pretty_print(current_throughput) << " bytes/s" << std::endl;
+        std::cout << "current rate:\t" << pretty_print(current_op_rate) << " ops/s\tthroughput: \t"
+                  << pretty_print(current_throughput)
+                  << " bytes/s\tunit:\t" << pretty_print(current_throughput / current_op_rate) << " bytes/op"
+                  << std::endl;
       }
       else if (start_time_ == now)
       { // If it's the very first tick, current rate is the same as total rate
-        std::cout << "current rate:\t" << pretty_print(total_msg_rate) << " msgs/s, throughput: \t"
-                  << pretty_print(total_throughput) << " bytes/s" << std::endl;
+        std::cout << "current rate:\t" << pretty_print(total_op_rate) << " ops/s\tthroughput: \t"
+                  << pretty_print(total_throughput)
+                  << " bytes/s\tunit:\t" << pretty_print(total_throughput / total_op_rate) << " bytes/op" << std::endl;
       }
 
       last_metric_ = metric;

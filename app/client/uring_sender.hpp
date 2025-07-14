@@ -4,6 +4,7 @@
 #include <liburing.h> // Use the raw liburing header
 #include "uring/io_context.hpp"
 #include "uring/provided_buffer_pool.hpp"
+#include "uring/sender.hpp"
 
 #include <iostream>
 #include <vector>
@@ -18,7 +19,7 @@ namespace client
   class uring_sender
   {
   public:
-    uring_sender(int id, const std::string& host, const std::string& port, std::size_t msg_size, int msgs_per_sec);
+    uring_sender(int id, int conns, const std::string& host, const std::string& port, std::size_t msg_size, int msgs_per_sec);
 
     ~uring_sender();
 
@@ -36,17 +37,11 @@ namespace client
   private:
     void run();
 
-    static void on_send_complete(const ::io_uring_cqe& cqe, void* context);
-
     int id_;
+    ::io_uring_params uring_params_;
     uring::io_context io_ctx_;
-    bsd::socket sock_;
-    uring::provided_buffer_pool buffer_pool_;
-    std::int16_t buffer_id_head_ = 0;
-    std::int16_t buffer_id_tail_ = 0;
-    bool is_buffer_full_ = false;
-    std::size_t msgs_requested_ = 0;
-    uring::io_context::req_data send_req_data_;
+    std::deque<uring::sender> senders_;
+
 
     std::chrono::steady_clock::time_point start_time_;
     std::chrono::nanoseconds interval_;

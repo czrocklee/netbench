@@ -103,7 +103,7 @@ namespace bsd
     {
       throw std::runtime_error{"Invalid IPv4 address"};
     }
-    
+
     if (::bind(sock_fd_, reinterpret_cast<sockaddr*>(&addr4), sizeof(addr4)) < 0)
     {
       throw socket_exception{"bind failed"};
@@ -122,7 +122,14 @@ namespace bsd
   {
     if (auto bytes_sent = ::send(sock_fd_, data, size, flags); bytes_sent < 0)
     {
-      throw socket_exception{"send failed"};
+      if (errno == EAGAIN || errno == EWOULDBLOCK)
+      {
+        return 0; // Non-blocking send, no data sent
+      }
+      else
+      {
+        throw socket_exception{"send failed"};
+      }
     }
     else
     {

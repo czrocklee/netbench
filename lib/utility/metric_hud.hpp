@@ -14,7 +14,7 @@ namespace utility
   public:
     struct metric
     {
-      std::uint64_t msgs = 0;
+      std::uint64_t ops = 0;
       std::uint64_t bytes = 0;
     };
 

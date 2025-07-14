@@ -27,11 +27,11 @@ class worker
 public:
   struct config
   {
-    unsigned buffer_size;
+    std::size_t buffer_size;
 #ifdef IO_URING_API
-    unsigned uring_depth;
-    unsigned buffer_count;
-    uint16_t buffer_group_id;
+    std::uint32_t uring_depth;
+    std::uint16_t buffer_count;
+    std::uint16_t buffer_group_id;
     ::io_uring_params params{};
 #elifdef BSD_API
     unsigned read_limit = 0;

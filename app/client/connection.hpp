@@ -29,6 +29,7 @@ public:
     try
     {
       sock_.connect(host, port);
+      sock_.set_nonblocking(true);
     }
     catch (const std::exception& e)
     {
@@ -42,13 +43,14 @@ public:
     sock_.set_nodelay(enable);
   }
 
-  void send(const char* data, std::size_t size)
+  bool send(const char* data, std::size_t size)
   {
     ssize_t bytes_sent = 0;
-    
+    auto to_sent = bytes_remains_ > 0 ? bytes_remains_ : size;
+
     try
     {
-      bytes_sent = sock_.send(data, size, 0);
+      bytes_sent = sock_.send(data + bytes_remains_, to_sent, 0);
     }
     catch (const std::exception& e)
     {
@@ -56,14 +58,12 @@ public:
       std::terminate();
     }
 
-    if (static_cast<std::size_t>(bytes_sent) != size)
-    {
-      std::cerr << "Connection " << conn_id_ << ": Partial send. Sent " << bytes_sent << " of " << size << " bytes."
-                << std::endl;
-    }
+    bytes_remains_ = to_sent - static_cast<std::size_t>(bytes_sent);
+    return bytes_remains_ == 0;
   }
 
 private:
   int conn_id_;
   bsd::socket sock_;
+  std::size_t bytes_remains_ = 0;
 };

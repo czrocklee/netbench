@@ -1,125 +1,115 @@
 #include "provided_buffer_pool.hpp"
-#include <utility> // For std::swap
-#include <string.h>
+#include <utility>
+#include <cstring>
+#include <stdexcept>
+#include <cassert>
 
 namespace uring
 {
   provided_buffer_pool::provided_buffer_pool(
     io_context& io_ctx,
-    std::size_t buffer_count,
-    std::size_t buffer_size,
-    std::uint16_t group_id)
-    : ring_{io_ctx.get_ring()},
-      buf_ring_{nullptr},
-      pool_memory_{nullptr},
-      buffer_count_{buffer_count},
-      buffer_size_{buffer_size},
-      group_id_{group_id}
+    std::uint16_t buf_cnt,
+    std::size_t buf_size,
+    group_id_type grp_id)
+    : ring_{*io_ctx.get_ring()}, buf_cnt_{buf_cnt}, buf_size_{buf_size}, grp_id_{grp_id}
   {
-    std::size_t pool_size = buffer_count_ * buffer_size_;
-    pool_memory_ =
-      static_cast<std::uint8_t*>(::mmap(NULL, pool_size, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0));
+    if (buf_cnt == 0)
+    {
+      throw std::invalid_argument{"Buffer count must be greater than zero"};
+    }
 
-    if (pool_memory_ == MAP_FAILED)
+    if (buf_size == 0)
+    {
+      throw std::invalid_argument{"Buffer size must be greater than zero"};
+    }
+
+    std::size_t pool_size = buf_cnt_ * buf_size_;
+    pool_memory_ = decltype(pool_memory_){
+      static_cast<std::byte*>(::mmap(nullptr, pool_size, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0)),
+      [pool_size](std::byte* ptr) { ::munmap(ptr, pool_size); }};
+
+    if (!pool_memory_)
     {
       throw std::runtime_error("Failed to allocate memory for buffer pool");
     }
 
-    int ret;
-    buf_ring_ = ::io_uring_setup_buf_ring(ring_, buffer_count_, group_id_, 0, &ret);
+    int ret = 0;
+    buf_ring_ = decltype(buf_ring_){
+      ::io_uring_setup_buf_ring(&ring_, buf_cnt_, grp_id_.value(), 0, &ret),
+      [this](::io_uring_buf_ring* ptr) { ::io_uring_unregister_buf_ring(&ring_, grp_id_); }};
 
     if (!buf_ring_)
     {
-      ::munmap(pool_memory_, pool_size); // Clean up allocated memory
       throw std::runtime_error("Failed to setup ::io_uring buffer ring. Error: " + std::string(strerror(-ret)));
     }
+
+    actual_buf_size_ = std::make_unique<std::size_t[]>(buf_cnt);
   }
 
-  void provided_buffer_pool::cleanup()
+  provided_buffer_pool::~provided_buffer_pool() = default;
+
+  void provided_buffer_pool::populate_buffers() noexcept
   {
-    if (buf_ring_ && ring_)
-    {
-      ::io_uring_unregister_buf_ring(ring_, group_id_);
-    }
-
-    if (pool_memory_)
-    {
-      ::munmap(pool_memory_, buffer_count_ * buffer_size_);
-    }
-
-    buf_ring_ = nullptr;
-    pool_memory_ = nullptr;
-    ring_ = nullptr;
+    push_buffers(buffer_id_type{0}, buffer_id_type{buf_cnt_});
   }
 
-  provided_buffer_pool::~provided_buffer_pool() { cleanup(); }
-
-  void provided_buffer_pool::populate_buffers()
+  void provided_buffer_pool::push_buffer(buffer_id_type buf_id) noexcept
   {
-    for (std::size_t i = 0; i < buffer_count_; ++i)
-    {
-      std::uint8_t* buffer_start = pool_memory_ + (i * buffer_size_);
-      ::io_uring_buf_ring_add(
-        buf_ring_,
-        buffer_start,
-        buffer_size_,
-        static_cast<std::uint16_t>(i),
-        ::io_uring_buf_ring_mask(buffer_count_),
-        i);
-    }
-
-    ::io_uring_buf_ring_advance(buf_ring_, buffer_count_);
+    push_buffer(buf_id, buf_size_);
   }
 
-  void provided_buffer_pool::reprovide_buffer(std::uint16_t buffer_id)
+  void provided_buffer_pool::push_buffer(buffer_id_type buf_id, std::size_t buf_size) noexcept
   {
-    if (std::uint8_t* buffer_address = get_buffer_address(buffer_id % buffer_count_); buffer_address != nullptr)
-    {
-      // This is the efficient part: we just write to a shared memory ring
-      // to return the buffer. No syscall needed.
-      ::io_uring_buf_ring_add(
-        buf_ring_, buffer_address, buffer_size_, buffer_id, ::io_uring_buf_ring_mask(buffer_count_), 0);
-      // Advance the tail by 1 to make the single buffer visible.
-      ::io_uring_buf_ring_advance(buf_ring_, 1);
-    }
+    actual_buf_size_[buf_id] = buf_size;
+    ::io_uring_buf_ring_add(
+      buf_ring_.get(), get_buffer_address(buf_id), buf_size, buf_id.value(), ::io_uring_buf_ring_mask(buf_cnt_), 0);
+    ::io_uring_buf_ring_advance(buf_ring_.get(), 1);
   }
 
-  void provided_buffer_pool::reprovide_buffers(std::uint16_t buffer_id_begin, std::uint16_t buffer_id_end)
+  void provided_buffer_pool::push_buffers(buffer_id_type buf_id_begin, buffer_id_type buf_id_end) noexcept
   {
-    if (buffer_id_end > buffer_id_begin)
+    int offset = 0;
+
+    if (buf_id_end > buf_id_begin)
     {
-      for (std::uint16_t i = buffer_id_begin; i < buffer_id_end; ++i)
+      for (auto i = buf_id_begin; i < buf_id_end; ++i)
       {
         ::io_uring_buf_ring_add(
-          buf_ring_, get_buffer_address(i), buffer_size_, i, ::io_uring_buf_ring_mask(buffer_count_), 0);
+          buf_ring_.get(), get_buffer_address(i), buf_size_, i, ::io_uring_buf_ring_mask(buf_cnt_), offset++);
+      }
+    }
+    else
+    {
+      for (auto i = buf_id_begin; i < buf_cnt_; ++i)
+      {
+        ::io_uring_buf_ring_add(
+          buf_ring_.get(), get_buffer_address(i), buf_size_, i, ::io_uring_buf_ring_mask(buf_cnt_), offset++);
       }
 
-      ::io_uring_buf_ring_advance(buf_ring_, buffer_id_end - buffer_id_begin);
-      return;
+      for (auto i = buffer_id_type{0}; i < buf_id_end; ++i)
+      {
+        ::io_uring_buf_ring_add(
+          buf_ring_.get(), get_buffer_address(i), buf_size_, i, ::io_uring_buf_ring_mask(buf_cnt_), offset++);
+      }
     }
 
-    for (std::uint16_t i = buffer_id_begin; i < buffer_count_; ++i)
-    {
-      ::io_uring_buf_ring_add(
-        buf_ring_, get_buffer_address(i), buffer_size_, i, ::io_uring_buf_ring_mask(buffer_count_), 0);
-    }
-
-    for (std::uint16_t i = 0; i < buffer_id_end; ++i)
-    {
-      ::io_uring_buf_ring_add(
-        buf_ring_, get_buffer_address(i), buffer_size_, i, ::io_uring_buf_ring_mask(buffer_count_), 0);
-    }
-
-    ::io_uring_buf_ring_advance(buf_ring_, buffer_count_ - buffer_id_begin + buffer_id_end);
+    ::io_uring_buf_ring_advance(buf_ring_.get(), offset);
   }
 
-  std::uint8_t* provided_buffer_pool::get_buffer_address(std::uint16_t buffer_id) const
+  void provided_buffer_pool::adjust_buffer_size(buffer_id_type buf_id, int offset) noexcept {
+    actual_buf_size_[buf_id] += offset;
+    assert(actual_buf_size_[buf_id] >= 0 && actual_buf_size_[buf_id] <= buf_size_);
+  }
+
+  std::byte* provided_buffer_pool::get_buffer_address(buffer_id_type buf_id) const noexcept
   {
-    if (buffer_id >= buffer_count_)
-    {
-      return nullptr; // Invalid ID
-    }
-
-    return pool_memory_ + (buffer_id * buffer_size_);
+    assert(buffer_id.value() >= buf_cnt_);
+    return pool_memory_.get() + (buf_id.value() * buf_size_);
   }
-}
+
+  ::asio::const_buffer provided_buffer_pool::get_buffer(buffer_id_type buf_id) const noexcept
+  {
+    return ::asio::buffer(get_buffer_address(buf_id), actual_buf_size_[buf_id]);
+  }
+
+} // namespace uring

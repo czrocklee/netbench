@@ -7,34 +7,54 @@
 namespace client
 {
 
-  namespace 
+  namespace
   {
-    uring_sender* self = nullptr;
+    ::io_uring_params uring_params()
+    {
+      io_uring_params params{};
+      params.cq_entries = 65536;
+      params.flags |= IORING_SETUP_R_DISABLED;
+      params.flags |= IORING_SETUP_SINGLE_ISSUER;
+      // params.flags |= IORING_SETUP_DEFER_TASKRUN;
+      params.flags |= IORING_SETUP_COOP_TASKRUN;
+      return params;
+    }
+ 
+
   }
 
   uring_sender::uring_sender(
     int id,
-    const std::string& host,
-    const std::string& port,
+    int conns,
+    std::string const& host,
+    std::string const& port,
     std::size_t msg_size,
     int msgs_per_sec)
     : id_{id},
-      io_ctx_{65536 / 2},
-      sock_{AF_INET, SOCK_STREAM, 0},
-      buffer_pool_{io_ctx_, 16, msg_size, static_cast<std::uint16_t>(id)},
-      send_req_data_{on_send_complete, this},
+      uring_params_{uring_params()},
+      io_ctx_{65536 / 2, uring_params_},
       interval_{std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::seconds{1}) / msgs_per_sec}
-
   {
-    self = this;
-
-    for (auto i = 0; i < buffer_pool_.get_buffer_count(); ++i)
+    for (int i = 0; i < conns; ++i)
     {
-      auto* buffer = buffer_pool_.get_buffer_address(i);
-      std::memset(buffer, 'a' + i % 26, msg_size);
+      auto& sender = senders_.emplace_back(
+        io_ctx_, 1024, msg_size, uring::provided_buffer_pool::group_id_type::cast_from(id * 100 + i));
+
+      auto& buffer_pool = sender.get_buffer_pool();
+
+      for (auto i = uring::provided_buffer_pool::buffer_id_type{0}; i < buffer_pool.get_buffer_count(); ++i)
+      {
+        auto* buffer = buffer_pool.get_buffer_address(i);
+        std::memset(buffer, 'a' + i % 26, msg_size);
+      }
     }
 
-    sock_.connect(host, port);
+    for (auto& sender : senders_)
+    {
+      bsd::socket sock(AF_INET, SOCK_STREAM, 0);
+      sock.connect(host, port);
+      sender.open(std::move(sock));
+    }
   }
 
   uring_sender::~uring_sender() {}
@@ -48,90 +68,56 @@ namespace client
     thread_ = std::jthread{[this] { run(); }};
   }
 
-  uint64_t uring_sender::total_msgs_sent() const { return total_msgs_sent_.load(std::memory_order_relaxed); }
+  uint64_t uring_sender::total_msgs_sent() const
+  {
+    return total_msgs_sent_.load(std::memory_order_relaxed);
+  }
 
-  uint64_t uring_sender::total_bytes_sent() const { return total_bytes_sent_.load(std::memory_order_relaxed); }
+  uint64_t uring_sender::total_bytes_sent() const
+  {
+    return total_bytes_sent_.load(std::memory_order_relaxed);
+  }
 
   void uring_sender::run()
   {
-
+    io_ctx_.enable();
     int conn_idx = 0;
 
     while (true)
     {
-      const auto now = std::chrono::steady_clock::now();
-      const auto expected_msgs = static_cast<std::uint64_t>((now - start_time_) / interval_);
+      auto const now = std::chrono::steady_clock::now();
+      auto const expected_msgs = static_cast<std::uint64_t>((now - start_time_) / interval_);
       // std::cout << interval_.count() << " " << (now - start_time_).count() << " " << expected_msgs << std::endl;
+      auto msgs_sent = total_msgs_sent_.load(std::memory_order_relaxed);
 
-      if (msgs_requested_ < expected_msgs)
+      while (msgs_sent < expected_msgs)
       {
-        if (!is_buffer_full_)
+        bool sent = false;
+
+        for (auto i = 0; i < senders_.size() && msgs_sent < expected_msgs; ++i)
         {
-          void* const buffer_address = buffer_pool_.get_buffer_address(buffer_id_head_ % buffer_pool_.get_buffer_count());
-          const std::size_t buffer_size = buffer_pool_.get_buffer_size();
+          auto& sender = senders_[conn_idx++];
 
-          auto& sqe = io_ctx_.create_request(send_req_data_);
-          ::io_uring_prep_send(&sqe, sock_.get_fd(), buffer_address, buffer_size, 0);
-          sqe.buf_group = buffer_pool_.get_group_id();
-          sqe.flags |= IOSQE_BUFFER_SELECT;
-          buffer_pool_.reprovide_buffer(buffer_id_head_);
-          
-          auto* data = new uring::io_context::req_data{.handler = on_send_complete, .context = (void *)buffer_id_head_};
-          ::io_uring_sqe_set_data(&sqe, data);
+          if (conn_idx == senders_.size()) { conn_idx = 0; }
 
+          if (sender.is_buffer_full()) { continue; }
 
-          //::io_uring_submit(io_ctx_.get_ring());
-          std::cout << "submit " << buffer_id_head_ << " " << &sqe<< std::endl;
+          sender.send([&, this](void*, std::size_t size) {
+            // Fill the buffer with data
+            // std::memset(buffer, 'a' + (buffer_id_head_ % 26), size);
+            return size; // msgs_sent % 1000 + 1; // Return the actual size written
+          });
 
-         // buffer_id_head_ = (buffer_id_head_ + 1) % buffer_pool_.get_buffer_count();
-         // is_buffer_full_ = (buffer_id_head_ == buffer_id_tail_);
-        
-         ++buffer_id_head_;
-         is_buffer_full_ = (buffer_id_head_ - buffer_id_tail_ == buffer_pool_.get_buffer_count());
-         ++msgs_requested_;
+          ++msgs_sent;
+          sent = true;
         }
+
+        if (!sent) { break; }
+        // Use the sender to send data
       }
 
+      total_msgs_sent_.store(msgs_sent);
       io_ctx_.poll();
-    }
-  }
-
-  void uring_sender::on_send_complete(const ::io_uring_cqe& cqe, void* context)
-  {
-    //auto* self = static_cast<uring_sender*>(context);
-
-    std::cout << "completion " << cqe.res << " " << reinterpret_cast<std::intptr_t>(context) << std::endl;
-
-
-    if (cqe.res < 0)
-    {
-      fprintf(stderr, "Send error on fd %d: %s\n", self->sock_.get_fd(), ::strerror(-cqe.res));
-      return;
-    }
-
-    auto buffer_id = cqe.flags >> IORING_CQE_BUFFER_SHIFT;
-
-    if (buffer_id != self->buffer_id_tail_)
-    {
-      fprintf(stderr, "invalid buffer id %d, expected %d\n", buffer_id, self->buffer_id_tail_);
-      std::terminate();
-    }
-    //std::cout << "completion " << cqe.res << " " << buffer_id << " " << reinterpret_cast<std::intptr_t>(context) << std::endl;
-
-    self->total_msgs_sent_.store(self->total_msgs_sent_.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
-    self->total_bytes_sent_.store(
-      self->total_bytes_sent_.load(std::memory_order_relaxed) + self->buffer_pool_.get_buffer_size(),
-      std::memory_order_relaxed);
-
-    if (cqe.res == self->buffer_pool_.get_buffer_size())
-    {
-      ++self->buffer_id_tail_;
-
-
-   /*    if (++self->buffer_id_tail_ == self->buffer_pool_.get_buffer_count())
-      {
-        self->buffer_id_tail_ = 0;
-      } */
     }
   }
 }

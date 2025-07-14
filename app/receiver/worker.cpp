@@ -5,7 +5,11 @@ worker::worker(config cfg)
   : config_{std::move(cfg)},
 #ifdef IO_URING_API
     io_ctx_{config_.uring_depth, config_.params},
-    buffer_pool_{io_ctx_, config_.buffer_count, config_.buffer_size, config_.buffer_group_id},
+    buffer_pool_{
+      io_ctx_,
+      config_.buffer_count,
+      config_.buffer_size,
+      uring::provided_buffer_pool::group_id_type{config_.buffer_group_id}},
 #elifdef ASIO_API
     io_ctx_{1},
     work_guard_{::asio::make_work_guard(io_ctx_)},
@@ -64,7 +68,7 @@ void worker::add_connection(net::socket sock)
 
       // Process the received data
       metrics_.bytes += data.size();
-      metrics_.msgs++;
+      metrics_.ops++;
     });
   }
   catch (std::exception const& e)

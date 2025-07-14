@@ -11,7 +11,11 @@ namespace bsd
     buffer_.resize(buffer_size);
   }
 
-  void receiver::open(bsd::socket sock) { sock_ = std::move(sock); }
+  void receiver::open(bsd::socket sock)
+  {
+    sock_ = std::move(sock);
+    sock_.set_nonblocking(true);
+  }
 
   void receiver::start(data_callback&& cb)
   {
