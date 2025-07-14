@@ -126,7 +126,7 @@ int main(int argc, char** argv)
     }
 
     auto collect_metric = [&conns, &conns_lock] {
-      utility::metric_hud::metric total_metric{};
+      utility::metric total_metric{};
 
       std::lock_guard<std::mutex> lg{conns_lock};
       for (auto const& conn : conns)

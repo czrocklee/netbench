@@ -14,7 +14,10 @@
 
 std::atomic<bool> shutdown_flag = false;
 
-void signal_handler(int /* signum */) { shutdown_flag = true; }
+void signal_handler(int /* signum */)
+{
+  shutdown_flag = true;
+}
 
 namespace
 {
@@ -23,10 +26,7 @@ namespace
   {
     auto colon_pos = full_address.find(':');
 
-    if (colon_pos == std::string::npos)
-    {
-      throw std::runtime_error{"Invalid address format. Expected host:port"};
-    }
+    if (colon_pos == std::string::npos) { throw std::runtime_error{"Invalid address format. Expected host:port"}; }
 
     host = full_address.substr(0, colon_pos);
     port = full_address.substr(colon_pos + 1);
@@ -41,7 +41,9 @@ int main(int argc, char** argv)
   app.add_option("-a,--address", address_str, "Target address in host:port format")->default_val("0.0.0.0:8080");
 
   worker::config cfg;
-  app.add_option("-s,--buffer-size", cfg.buffer_size, "Size of each receive buffer in bytes")->default_val(1024);
+  app.add_option("-b,--buffer-size", cfg.buffer_size, "Size of receive buffer in bytes")->default_val(4096);
+
+  app.add_option("-s,--msg-size", cfg.msg_size, "Size of message size in bytes")->default_val(1024);
 
 #ifdef IO_URING_API
   app.add_option("-c,--buffer-count", cfg.buffer_count, "Number of buffers in pool prepared for each worker")
@@ -118,24 +120,21 @@ int main(int argc, char** argv)
 
     std::cout << "Main thread acceptor listening on " << address_str << std::endl;
 
-    auto collect_metric = [&workers]() -> utility::metric_hud::metric {
-      std::vector<std::future<utility::metric_hud::metric>> futures;
-      futures.reserve(workers.size());
+    auto collect_metric = [&workers]() -> utility::metric {
+      utility::metric total_metric{};
+      total_metric.init_histogram();
 
       for (auto& worker_ptr : workers)
       {
-        auto p = std::make_shared<std::promise<utility::metric_hud::metric>>();
-        futures.emplace_back(p->get_future());
-        worker_ptr->post([p, worker = worker_ptr.get()]() { p->set_value(worker->get_metrics()); });
-      }
+        std::promise<void> prom;
+        auto fut = prom.get_future();
 
-      utility::metric_hud::metric total_metric{};
+        worker_ptr->post([&] {
+          total_metric.add(worker_ptr->get_metrics());
+          prom.set_value();
+        });
 
-      for (auto& f : futures)
-      {
-        auto m = f.get();
-        total_metric.ops += m.ops;
-        total_metric.bytes += m.bytes;
+        fut.get();
       }
 
       return total_metric;

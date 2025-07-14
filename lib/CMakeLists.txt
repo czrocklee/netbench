@@ -25,3 +25,4 @@ target_link_libraries(uring_lib PUBLIC bsd_lib uring)
 
 add_library(utility_lib STATIC utility/metric_hud.cpp)
 target_include_directories(utility_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(utility_lib PUBLIC hdr_histogram::hdr_histogram)

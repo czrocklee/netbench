@@ -26,7 +26,7 @@ int main(int argc, char** argv)
   app.add_option("-m,--msgs-per-sec", msgs_per_sec, "Messages per second per sender")->default_val(1000);
 
   int msg_size;
-    app.add_option("-z,--msg-size", msg_size, "Message size in bytes")->default_val(1024);
+  app.add_option("-z,--msg-size", msg_size, "Message size in bytes")->default_val(1024);
 
   bool nodelay;
   app.add_option("-n,--nodelay", nodelay, "Enable TCP_NODELAY")->default_val(false);
@@ -55,14 +55,14 @@ int main(int argc, char** argv)
 
   auto ss = std::deque<sender>{};
 
-  for (auto i = 0; i < senders; ++i) { ss.emplace_back(i, conns, msgs_per_sec / senders); }
+  for (auto i = 0; i < senders; ++i) { ss.emplace_back(i, conns, msg_size, msgs_per_sec / senders); }
 
   for (auto& s : ss) { s.start(host, port, bind_address, msg_size, nodelay); }
 
   auto collect_metric = [&] {
     auto total_msgs_sent =
       std::accumulate(ss.begin(), ss.end(), 0ul, [](auto count, auto& s) { return count + s.total_msgs_sent(); });
-    return utility::metric_hud::metric{.ops = total_msgs_sent, .bytes = total_msgs_sent * msg_size};
+    return utility::metric{.ops = total_msgs_sent, .bytes = total_msgs_sent * msg_size};
   };
 
   utility::metric_hud hud{std::chrono::seconds{5}, collect_metric};

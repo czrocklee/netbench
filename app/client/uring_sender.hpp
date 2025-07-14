@@ -19,12 +19,19 @@ namespace client
   class uring_sender
   {
   public:
-    uring_sender(int id, int conns, const std::string& host, const std::string& port, std::size_t msg_size, int msgs_per_sec);
+    uring_sender(
+      int id,
+      int conns,
+      std::string const& host,
+      std::string const& port,
+      std::size_t msg_size,
+      int msgs_per_sec,
+      bool nodelay);
 
     ~uring_sender();
 
-    uring_sender(const uring_sender&) = delete;
-    uring_sender& operator=(const uring_sender&) = delete;
+    uring_sender(uring_sender const&) = delete;
+    uring_sender& operator=(uring_sender const&) = delete;
     uring_sender(uring_sender&&) = delete;
     uring_sender& operator=(uring_sender&&) = delete;
 
@@ -41,7 +48,6 @@ namespace client
     ::io_uring_params uring_params_;
     uring::io_context io_ctx_;
     std::deque<uring::sender> senders_;
-
 
     std::chrono::steady_clock::time_point start_time_;
     std::chrono::nanoseconds interval_;

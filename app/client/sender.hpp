@@ -23,18 +23,16 @@
 class sender
 {
 public:
-  sender(int id, int conns, int msgs_per_sec)
+  sender(int id, int conns, std::size_t msg_size, int msgs_per_sec)
     : interval_{std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::seconds{1}) / msgs_per_sec}
   {
     conns_.reserve(conns);
-    for (int i = 0; i < conns; ++i) { conns_.emplace_back(id * 1000 + i); }
+    for (int i = 0; i < conns; ++i) { conns_.emplace_back(id * 1000 + i, msg_size); }
   }
 
   void
   start(std::string const& host, std::string const& port, std::string const& bind_address, int msg_size, bool nodelay)
   {
-    message_.resize(msg_size, std::byte{'a'});
-
     for (auto& conn : conns_)
     {
       conn.connect(host, port, bind_address);
@@ -63,7 +61,7 @@ private:
 
       if (msgs_sent_ < expected_msgs)
       {
-        if (conns_[conn_idx++].send(reinterpret_cast<char const*>(message_.data()), message_.size()))
+        if (conns_[conn_idx++].try_send())
         {
           total_msgs_sent_.store(total_msgs_sent_.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
           ++msgs_sent_;
@@ -78,7 +76,6 @@ private:
   }
 
   std::vector<connection> conns_;
-  std::vector<std::byte> message_;
   std::jthread _thread;
   std::chrono::steady_clock::duration const interval_;
   std::chrono::steady_clock::time_point start_time_;

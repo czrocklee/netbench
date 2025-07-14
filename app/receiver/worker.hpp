@@ -28,6 +28,7 @@ public:
   struct config
   {
     std::size_t buffer_size;
+    std::size_t msg_size;
 #ifdef IO_URING_API
     std::uint32_t uring_depth;
     std::uint16_t buffer_count;
@@ -35,7 +36,7 @@ public:
     ::io_uring_params params{};
 #elifdef BSD_API
     unsigned read_limit = 0;
-#endif 
+#endif
   };
 
   explicit worker(config cfg);
@@ -51,13 +52,25 @@ public:
   void add_connection(net::socket sock);
   bool post(std::move_only_function<void()> task);
 
-  utility::metric_hud::metric get_metrics() const { return metrics_; }
+  utility::metric const& get_metrics() const { return metrics_; }
 
   net::io_context& get_io_context() { return io_ctx_; }
 
 private:
   void run();
   void process_pending_tasks();
+
+  struct connection
+  {
+    template<typename... Args>
+    connection(Args&&... args) : receiver{std::forward<Args>(args)...}
+    {
+    }
+
+    net::receiver receiver;
+    std::unique_ptr<std::byte[]> partial_buffer;
+    std::size_t partial_buffer_size = 0;
+  };
 
   config config_;
   std::atomic<bool> stop_flag_{false};
@@ -67,8 +80,8 @@ private:
 #elifdef ASIO_API
   asio::executor_work_guard<::asio::io_context::executor_type> work_guard_;
 #endif
-  utility::metric_hud::metric metrics_{};
-  std::list<net::receiver> connections_;
+  utility::metric metrics_{};
+  std::list<connection> connections_;
   boost::lockfree::spsc_queue<std::move_only_function<void()>> pending_task_queue_;
   std::thread thread_;
 };

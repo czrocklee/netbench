@@ -13,6 +13,7 @@ endif()
 
 find_package(CLI11 REQUIRED)
 find_package(Boost REQUIRED COMPONENTS headers)
+find_package(hdr_histogram REQUIRED)
 
 add_subdirectory(lib)
 
@@ -33,7 +34,7 @@ target_compile_definitions(asio_uring_receiver PRIVATE ASIO_API ASIO_STANDALONE 
 target_link_libraries(asio_uring_receiver PRIVATE utility_lib CLI11::CLI11 uring)
 
 add_executable(asio_ioctx_mt_receiver app/receiver/worker.cpp app/receiver/asio_ioctx_mt.cpp)
-target_compile_definitions(asio_ioctx_mt_receiver PRIVATE ASIO_API ASIO_STANDALONE ASIO_NO_DEPRECATED)
+target_compile_definitions(asio_ioctx_mt_receiver PRIVATE ASIO_API ASIO_STANDALONE ASIO_NO_DEPRECATED )
 target_link_libraries(asio_ioctx_mt_receiver PRIVATE utility_lib CLI11::CLI11)
 
 add_executable(asio_uring_ioctx_mt_receiver app/receiver/worker.cpp app/receiver/asio_ioctx_mt.cpp)

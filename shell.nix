@@ -70,6 +70,7 @@ in
       mimalloc
       cli11
       hdrhistogram-c-lib
+      zlib
       liburing-lib
       asio-lib
     ];

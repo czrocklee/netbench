@@ -19,7 +19,6 @@ namespace client
       params.flags |= IORING_SETUP_COOP_TASKRUN;
       return params;
     }
- 
 
   }
 
@@ -29,7 +28,8 @@ namespace client
     std::string const& host,
     std::string const& port,
     std::size_t msg_size,
-    int msgs_per_sec)
+    int msgs_per_sec, 
+    bool nodelay)
     : id_{id},
       uring_params_{uring_params()},
       io_ctx_{65536 / 2, uring_params_},
@@ -53,6 +53,7 @@ namespace client
     {
       bsd::socket sock(AF_INET, SOCK_STREAM, 0);
       sock.connect(host, port);
+      sock.set_nodelay(nodelay);
       sender.open(std::move(sock));
     }
   }

@@ -1,4 +1,5 @@
 #include "worker.hpp"
+#include "utility/time.hpp"
 #include <iostream>
 
 worker::worker(config cfg)
@@ -16,12 +17,16 @@ worker::worker(config cfg)
 #endif
     pending_task_queue_{128}
 {
+  metrics_.init_histogram();
 #ifdef IO_URING_API
   buffer_pool_.populate_buffers();
 #endif
 }
 
-worker::~worker() { stop(); }
+worker::~worker()
+{
+  stop();
+}
 
 void worker::start()
 {
@@ -55,15 +60,58 @@ void worker::add_connection(net::socket sock)
 #endif
 
 #ifdef BSD_API
-    iter->set_read_limit(config_.read_limit);
+    iter->receiver.set_read_limit(config_.read_limit);
 #endif
-    iter->open(std::move(sock));
-    iter->start([this, iter](std::error_code ec, asio::const_buffer data) {
+    iter->partial_buffer = std::make_unique<std::byte[]>(config_.msg_size);
+    iter->receiver.open(std::move(sock));
+    iter->receiver.start([this, iter](std::error_code ec, asio::const_buffer const data) {
+      auto const now = utility::nanos_since_epoch();
+
       if (ec)
       {
         std::cerr << "Error receiving data: " << ec.message() << std::endl;
         connections_.erase(iter);
         return;
+      }
+
+      auto const on_new_msg = [&](void const* buffer) {
+        std::uint64_t send_timestamp;
+        std::memcpy(&send_timestamp, buffer, sizeof(send_timestamp));
+        metrics_.msgs++;
+        metrics_.update_latency_histogram(now - send_timestamp);
+      };
+
+      auto data_left = data;
+
+      if (!iter->partial_buffer_size > 0)
+      {
+        auto addr = reinterpret_cast<std::byte const*>(data_left.data());
+        auto size = std::min(config_.msg_size - iter->partial_buffer_size, data_left.size());
+        std::memcpy(iter->partial_buffer.get() + iter->partial_buffer_size, addr, size);
+        iter->partial_buffer_size += size;
+
+        if (iter->partial_buffer_size == config_.msg_size)
+        {
+          on_new_msg(iter->partial_buffer.get());
+          iter->partial_buffer_size = 0;
+        }
+
+        data_left += size;
+      }
+
+      while (data_left.size() >= 0)
+      {
+        auto addr = reinterpret_cast<std::byte const*>(data_left.data());
+
+        if (data_left.size() < config_.msg_size)
+        {
+          std::memcpy(iter->partial_buffer.get(), addr, data_left.size());
+          iter->partial_buffer_size = data_left.size();
+          break;
+        }
+
+        on_new_msg(addr);
+        data_left += config_.msg_size;
       }
 
       // Process the received data

@@ -3,7 +3,6 @@
 
 #include <CLI/CLI.hpp>
 
-
 int main(int argc, char** argv)
 {
   CLI::App app{"io_uring TCP Sender Client"};
@@ -22,6 +21,9 @@ int main(int argc, char** argv)
 
   int msg_size = 1024;
   app.add_option("-z,--msg-size", msg_size, "Message size in bytes")->default_val(1024);
+
+  bool nodelay;
+  app.add_option("-n,--nodelay", nodelay, "Enable TCP_NODELAY")->default_val(false);
 
   CLI11_PARSE(app, argc, argv);
 
@@ -49,9 +51,9 @@ int main(int argc, char** argv)
   {
     try
     {
-      sender_list.emplace_back(std::make_unique<client::uring_sender>(i, conns, host, port, msg_size, msgs_per_sec));
+      sender_list.emplace_back(std::make_unique<client::uring_sender>(i, conns, host, port, msg_size, msgs_per_sec, nodelay));
     }
-    catch (const std::exception& e)
+    catch (std::exception const& e)
     {
       std::cerr << "Failed to create sender " << i << ": " << e.what() << std::endl;
       return 1;
@@ -63,7 +65,7 @@ int main(int argc, char** argv)
   auto collect_metric = [&]() {
     auto total_ops = std::accumulate(
       sender_list.begin(), sender_list.end(), 0ul, [](auto count, auto& s) { return count + s->total_msgs_sent(); });
-    return utility::metric_hud::metric{.ops = total_ops, .bytes = total_ops * msg_size};
+    return utility::metric{.ops = total_ops, .bytes = total_ops * msg_size};
   };
 
   utility::metric_hud hud{std::chrono::seconds{5}, collect_metric};
