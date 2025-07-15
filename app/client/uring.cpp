@@ -10,17 +10,20 @@ int main(int argc, char** argv)
   std::string address;
   app.add_option("-a,--address", address, "Target address")->default_val("127.0.0.1:19004");
 
-  int senders = 1;
+  int senders;
   app.add_option("-s,--senders", senders, "Number of senders")->default_val(1);
 
-  int conns = 1;
+  int conns;
   app.add_option("-c,--conns", conns, "Number of connections per sender")->default_val(1);
 
-  int msgs_per_sec = 1000;
+  int msgs_per_sec;
   app.add_option("-m,--msgs-per-sec", msgs_per_sec, "Messages per second per sender (0 for max)")->default_val(1000);
 
-  int msg_size = 1024;
+  int msg_size;
   app.add_option("-z,--msg-size", msg_size, "Message size in bytes")->default_val(1024);
+
+  int send_queue_size;
+  app.add_option("-q,--send-queue-size", send_queue_size, "Send queue size")->default_val(128);
 
   bool nodelay;
   app.add_option("-n,--nodelay", nodelay, "Enable TCP_NODELAY")->default_val(false);
@@ -47,11 +50,14 @@ int main(int argc, char** argv)
   }
 
   std::vector<std::unique_ptr<client::uring_sender>> sender_list;
+  sender_list.reserve(senders);
+
   for (int i = 0; i < senders; ++i)
   {
     try
     {
-      sender_list.emplace_back(std::make_unique<client::uring_sender>(i, conns, host, port, msg_size, msgs_per_sec, nodelay));
+      sender_list.emplace_back(
+        std::make_unique<client::uring_sender>(i, conns, host, port, msg_size, send_queue_size, msgs_per_sec, nodelay));
     }
     catch (std::exception const& e)
     {

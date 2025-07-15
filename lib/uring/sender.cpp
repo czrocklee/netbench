@@ -1,4 +1,5 @@
 #include "sender.hpp"
+
 #include <cstring>
 #include <iostream>
 
@@ -32,7 +33,7 @@ namespace uring
 
   void sender::on_bundle_send_completion(::io_uring_cqe const& cqe, void* context)
   {
-    //std::cout << "on_bundle_send_completion res: " << cqe.res << ", flags: " << (cqe.flags & 0xFFFF) << std::endl;
+    // std::cout << "on_bundle_send_completion res: " << cqe.res << ", flags: " << (cqe.flags & 0xFFFF) << std::endl;
 
     auto& self = *static_cast<sender*>(context);
 
@@ -115,7 +116,8 @@ namespace uring
 
   void sender::start_bundle_send_operation()
   {
-    //std::cout << "starting bundle send operation " << buf_id_head_.value() << " " << buf_id_tail_.value() << std::endl;
+    // std::cout << "starting bundle send operation " << buf_id_head_.value() << " " << buf_id_tail_.value() <<
+    // std::endl;
     state_ = state::sending;
     send_req_data_.handler = on_bundle_send_completion;
     auto& sqe = io_ctx_.create_request(send_req_data_);

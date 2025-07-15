@@ -28,12 +28,12 @@ namespace utility
 
   namespace
   {
-    std::string pretty_print(double value)
+    std::string pretty_print(double value, int precision = 1)
     {
       if (std::abs(value) < 1000.0)
       {
         std::stringstream ss;
-        ss << std::fixed << std::setprecision(1) << value;
+        ss << std::fixed << std::setprecision(precision) << value;
         return ss.str();
       }
 
@@ -48,7 +48,7 @@ namespace utility
       }
 
       std::stringstream ss;
-      ss << std::fixed << std::setprecision(1) << temp_value << suffixes[suffix_index];
+      ss << std::fixed << std::setprecision(precision) << temp_value << suffixes[suffix_index];
       return ss.str();
     }
   }
@@ -57,7 +57,7 @@ namespace utility
   {
     auto const now = std::chrono::steady_clock::now();
     constexpr std::string_view format_line =
-      "{:>6} / {:6}    {:>6} / {:6}    {:>6} / {:6}    {:>6} / {:6}    {:>6}        {:>6}        {:>6}";
+      "{:>6} / {:6}    {:>6} / {:6}    {:>6} / {:6}    {:>6} / {:6}    {:>8}    {:>8}    {:>8}";
 
     // Only update if the interval has passed, or if it's the very first tick
     if (start_time_ == std::chrono::steady_clock::time_point{} || (now - last_time_checked_ >= interval_))
@@ -118,12 +118,12 @@ namespace utility
                      pretty_print(total_throughput),
                      pretty_print(current_throughput / current_op_rate),
                      pretty_print(total_throughput / total_op_rate),
-                     metric.latency_hist ? pretty_print(::hdr_mean(metric.latency_hist.get()) / 1000) : "na",
+                     metric.latency_hist ? pretty_print(::hdr_mean(metric.latency_hist.get()) / 1000, 2) : "na",
                      metric.latency_hist
-                       ? pretty_print(::hdr_value_at_percentile(metric.latency_hist.get(), 50.0) / 1000)
+                       ? pretty_print(::hdr_value_at_percentile(metric.latency_hist.get(), 50.0) / 1000, 2)
                        : "na",
                      metric.latency_hist
-                       ? pretty_print(::hdr_value_at_percentile(metric.latency_hist.get(), 99.99) / 1000)
+                       ? pretty_print(::hdr_value_at_percentile(metric.latency_hist.get(), 99.99) / 1000, 2)
                        : "na")
                 << std::endl;
 

@@ -46,7 +46,7 @@ public:
   worker(worker&&) = delete;
   worker& operator=(worker&&) = delete;
 
-  void start();
+  void start(bool busy_spin);
   void stop();
   void add_connection(net::socket sock);
   bool post(std::move_only_function<void()> task);
@@ -70,6 +70,8 @@ private:
 
 
   void run();
+  void run_busy_spin();
+
   void process_pending_tasks();
   void on_data(connection& conn, asio::const_buffer const data);
   void on_new_message(void const* buffer);

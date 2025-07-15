@@ -1,4 +1,5 @@
 #include "uring_sender.hpp"
+#include <utility/time.hpp>
 
 #include <iostream>
 #include <numeric>
@@ -16,7 +17,7 @@ namespace client
       params.flags |= IORING_SETUP_R_DISABLED;
       params.flags |= IORING_SETUP_SINGLE_ISSUER;
       // params.flags |= IORING_SETUP_DEFER_TASKRUN;
-      params.flags |= IORING_SETUP_COOP_TASKRUN;
+      // params.flags |= IORING_SETUP_COOP_TASKRUN;
       return params;
     }
 
@@ -28,7 +29,8 @@ namespace client
     std::string const& host,
     std::string const& port,
     std::size_t msg_size,
-    int msgs_per_sec, 
+    std::size_t send_queue_size,
+    int msgs_per_sec,
     bool nodelay)
     : id_{id},
       uring_params_{uring_params()},
@@ -38,7 +40,7 @@ namespace client
     for (int i = 0; i < conns; ++i)
     {
       auto& sender = senders_.emplace_back(
-        io_ctx_, 1024, msg_size, uring::provided_buffer_pool::group_id_type::cast_from(id * 100 + i));
+        io_ctx_, send_queue_size, msg_size, uring::provided_buffer_pool::group_id_type::cast_from(id * 100 + i));
 
       auto& buffer_pool = sender.get_buffer_pool();
 
@@ -53,6 +55,8 @@ namespace client
     {
       bsd::socket sock(AF_INET, SOCK_STREAM, 0);
       sock.connect(host, port);
+      metadata md{.msg_size = msg_size};
+      sock.send(&md, sizeof(md), 0);
       sock.set_nodelay(nodelay);
       sender.open(std::move(sock));
     }
@@ -103,8 +107,9 @@ namespace client
 
           if (sender.is_buffer_full()) { continue; }
 
-          sender.send([&, this](void*, std::size_t size) {
-            // Fill the buffer with data
+          sender.send([&, this](void* buf, std::size_t size) {
+            std::uint64_t const now = utility::nanos_since_epoch();
+            std::memcpy(buf, &now, sizeof(now));
             // std::memset(buffer, 'a' + (buffer_id_head_ % 26), size);
             return size; // msgs_sent % 1000 + 1; // Return the actual size written
           });

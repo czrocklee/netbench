@@ -30,9 +30,9 @@ worker::~worker()
   stop();
 }
 
-void worker::start()
+void worker::start(bool busy_spin)
 {
-  thread_ = std::thread{[this] { run(); }};
+  thread_ = std::thread{[this, busy_spin] { busy_spin ? run_busy_spin() : run(); }};
 }
 
 void worker::stop()
@@ -120,7 +120,7 @@ void worker::on_data(connection& conn, asio::const_buffer const data)
   // for most of the protocols(except text based ones), message that scattered on multiple buffers
   // are difficult to handle, the most straightforward way to handle is to reconstruct them in a single flat
   // buffer which may introduce some overhead.
-  
+
   if (!conn.partial_buffer_size > 0)
   {
     auto addr = reinterpret_cast<std::byte const*>(data_left.data());
@@ -186,6 +186,35 @@ void worker::run()
     while (!stop_flag_.load(std::memory_order::relaxed))
     {
       io_ctx_.poll_wait();
+      process_pending_tasks();
+    }
+#endif
+  }
+  catch (std::exception const& e)
+  {
+    std::cerr << "Error in worker thread: " << e.what() << std::endl;
+  }
+
+  std::cout << "worker thread " << std::this_thread::get_id() << " stopping." << std::endl;
+}
+
+void worker::run_busy_spin()
+{
+  std::cout << "worker thread " << std::this_thread::get_id() << " started with busy spin polling." << std::endl;
+
+#ifdef IO_URING_API
+  io_ctx_.enable();
+#endif
+
+  try
+  {
+#ifdef ASIO_API
+    while (!stop_flag_.load(std::memory_order::relaxed)) { io_ctx_.poll(); }
+#else
+    while (!stop_flag_.load(std::memory_order::relaxed))
+    {
+      for (auto i = 0; i < 1000; ++i) { io_ctx_.poll_wait(); }
+
       process_pending_tasks();
     }
 #endif

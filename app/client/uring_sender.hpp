@@ -1,10 +1,10 @@
 #pragma once
 
 #include "bsd/socket.hpp"
-#include <liburing.h> // Use the raw liburing header
 #include "uring/io_context.hpp"
 #include "uring/provided_buffer_pool.hpp"
 #include "uring/sender.hpp"
+#include "../common/metadata.hpp"
 
 #include <iostream>
 #include <vector>
@@ -25,6 +25,7 @@ namespace client
       std::string const& host,
       std::string const& port,
       std::size_t msg_size,
+      std::size_t send_queue_size,
       int msgs_per_sec,
       bool nodelay);
 

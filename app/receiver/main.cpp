@@ -53,6 +53,9 @@ int main(int argc, char** argv)
     ->default_val(1024 * 64);
 #endif
 
+  bool busy_spin;
+  app.add_option("-s,--busy-spin", busy_spin, "Enable busy spin polling")->default_val(false);
+
   unsigned num_workers;
   app.add_option("-w,--workers", num_workers, "Number of worker threads to start")->default_val(1);
 
@@ -91,7 +94,7 @@ int main(int argc, char** argv)
       cfg.params = params;
 #endif
 
-      workers.emplace_back(std::make_unique<worker>(cfg))->start();
+      workers.emplace_back(std::make_unique<worker>(cfg))->start(busy_spin);
     }
 
     net::acceptor acceptor{io_ctx};
