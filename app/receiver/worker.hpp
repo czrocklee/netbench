@@ -56,9 +56,6 @@ public:
   net::io_context& get_io_context() { return io_ctx_; }
 
 private:
-  void run();
-  void process_pending_tasks();
-
   struct connection
   {
     template<typename... Args>
@@ -70,6 +67,12 @@ private:
     std::unique_ptr<std::byte[]> partial_buffer;
     std::size_t partial_buffer_size = 0;
   };
+
+
+  void run();
+  void process_pending_tasks();
+  void on_data(connection& conn, asio::const_buffer const data);
+  void on_new_message(void const* buffer);
 
   config config_;
   std::size_t msg_size_;

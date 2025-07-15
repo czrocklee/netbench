@@ -57,7 +57,7 @@ namespace utility
   {
     auto const now = std::chrono::steady_clock::now();
     constexpr std::string_view format_line =
-      "{:>6} / {:6}    {:>6} / {:6}    {:>6} / {:6}    {:>6} / {:6}    {:>6}        {:>6}";
+      "{:>6} / {:6}    {:>6} / {:6}    {:>6} / {:6}    {:>6} / {:6}    {:>6}        {:>6}        {:>6}";
 
     // Only update if the interval has passed, or if it's the very first tick
     if (start_time_ == std::chrono::steady_clock::time_point{} || (now - last_time_checked_ >= interval_))
@@ -66,10 +66,20 @@ namespace utility
       if (start_time_ == std::chrono::steady_clock::time_point{})
       {
         start_time_ = now;
-        std::cout
-          << std::format(
-               format_line, "ops", "(all)", "msgs", "(all)", "bytes", "(all)", "unit", "(all)", "p50(us)", "p99.99(us)")
-          << std::endl;
+        std::cout << std::format(
+                       format_line,
+                       "ops",
+                       "(all)",
+                       "msgs",
+                       "(all)",
+                       "bytes",
+                       "(all)",
+                       "unit",
+                       "(all)",
+                       "mean(us)",
+                       "p50(us)",
+                       "p99.99(us)")
+                  << std::endl;
       }
 
       auto metric = action_();
@@ -78,14 +88,6 @@ namespace utility
       auto const total_op_rate = metric.ops / elapsed_total_time;
       auto const total_msg_rate = metric.msgs / elapsed_total_time;
       auto const total_throughput = metric.bytes / elapsed_total_time;
-
-      /*     std::cout << pretty_print(total_op_rate) << \tthroughput : \t "
-                    << pretty_print(total_throughput)
-                    << " bytes/s \tunit:\t"
-                    << pretty_print(total_throughput / total_op_rate)
-                    << " bytes/op"
-
-                    << std::endl; */
 
       double current_op_rate = 0;
       double current_msg_rate = 0;
@@ -116,6 +118,7 @@ namespace utility
                      pretty_print(total_throughput),
                      pretty_print(current_throughput / current_op_rate),
                      pretty_print(total_throughput / total_op_rate),
+                     metric.latency_hist ? pretty_print(::hdr_mean(metric.latency_hist.get()) / 1000) : "na",
                      metric.latency_hist
                        ? pretty_print(::hdr_value_at_percentile(metric.latency_hist.get(), 50.0) / 1000)
                        : "na",

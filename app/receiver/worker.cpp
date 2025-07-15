@@ -70,18 +70,17 @@ void worker::add_connection(net::socket sock)
     sock.receive(::asio::buffer(&md, sizeof(md)), 0);
 #else
     sock.recv(&md, sizeof(md), 0);
-#endif    
+#endif
     msg_size_ = md.msg_size;
 
     if (msg_size_ < sizeof(std::uint64_t) || msg_size_ > config_.buffer_size)
     {
       throw std::runtime_error{std::format("Invalid message size from peer: {}", msg_size_)};
     }
-     
+
     iter->partial_buffer = std::make_unique<std::byte[]>(msg_size_);
     iter->receiver.open(std::move(sock));
     iter->receiver.start([this, iter](std::error_code ec, asio::const_buffer const data) {
-
       if (ec)
       {
         std::cerr << "Error receiving data: " << ec.message() << std::endl;
@@ -89,50 +88,7 @@ void worker::add_connection(net::socket sock)
         return;
       }
 
-      auto const on_new_msg = [&](void const* buffer) {
-        auto const now = utility::nanos_since_epoch();
-        std::uint64_t send_timestamp;
-        std::memcpy(&send_timestamp, buffer, sizeof(send_timestamp));
-        metrics_.msgs++;
-        metrics_.update_latency_histogram(now - send_timestamp);
-      };
-
-      auto data_left = data;
-
-      if (!iter->partial_buffer_size > 0)
-      {
-        auto addr = reinterpret_cast<std::byte const*>(data_left.data());
-        auto size = std::min(msg_size_ - iter->partial_buffer_size, data_left.size());
-        std::memcpy(iter->partial_buffer.get() + iter->partial_buffer_size, addr, size);
-        iter->partial_buffer_size += size;
-
-        if (iter->partial_buffer_size == msg_size_)
-        {
-          on_new_msg(iter->partial_buffer.get());
-          iter->partial_buffer_size = 0;
-        }
-
-        data_left += size;
-      }
-
-      while (data_left.size() >= 0)
-      {
-        auto addr = reinterpret_cast<std::byte const*>(data_left.data());
-
-        if (data_left.size() < msg_size_)
-        {
-          std::memcpy(iter->partial_buffer.get(), addr, data_left.size());
-          iter->partial_buffer_size = data_left.size();
-          break;
-        }
-
-        on_new_msg(addr);
-        data_left += msg_size_;
-      }
-
-      // Process the received data
-      metrics_.bytes += data.size();
-      metrics_.ops++;
+      on_data(*iter, data);
     });
   }
   catch (std::exception const& e)
@@ -155,6 +111,58 @@ bool worker::post(std::move_only_function<void()> task)
   ::asio::post(io_ctx_, std::move(task));
 #endif // ASIO_API
   return true;
+}
+
+void worker::on_data(connection& conn, asio::const_buffer const data)
+{
+  auto data_left = data;
+
+  // for most of the protocols(except text based ones), message that scattered on multiple buffers
+  // are difficult to handle, the most straightforward way to handle is to reconstruct them in a single flat
+  // buffer which may introduce some overhead.
+  
+  if (!conn.partial_buffer_size > 0)
+  {
+    auto addr = reinterpret_cast<std::byte const*>(data_left.data());
+    auto size = std::min(msg_size_ - conn.partial_buffer_size, data_left.size());
+    std::memcpy(conn.partial_buffer.get() + conn.partial_buffer_size, addr, size);
+    conn.partial_buffer_size += size;
+
+    if (conn.partial_buffer_size == msg_size_)
+    {
+      on_new_message(conn.partial_buffer.get());
+      conn.partial_buffer_size = 0;
+    }
+
+    data_left += size;
+  }
+
+  while (data_left.size() >= 0)
+  {
+    auto addr = reinterpret_cast<std::byte const*>(data_left.data());
+
+    if (data_left.size() < msg_size_)
+    {
+      std::memcpy(conn.partial_buffer.get(), addr, data_left.size());
+      conn.partial_buffer_size = data_left.size();
+      break;
+    }
+
+    on_new_message(addr);
+    data_left += msg_size_;
+  }
+
+  metrics_.bytes += data.size();
+  metrics_.ops++;
+}
+
+void worker::on_new_message(void const* buffer)
+{
+  auto const now = utility::nanos_since_epoch();
+  std::uint64_t send_timestamp;
+  std::memcpy(&send_timestamp, buffer, sizeof(send_timestamp));
+  metrics_.msgs++;
+  metrics_.update_latency_histogram(now - send_timestamp);
 }
 
 void worker::process_pending_tasks()
