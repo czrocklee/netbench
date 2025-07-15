@@ -43,8 +43,6 @@ int main(int argc, char** argv)
   worker::config cfg;
   app.add_option("-b,--buffer-size", cfg.buffer_size, "Size of receive buffer in bytes")->default_val(4096);
 
-  app.add_option("-s,--msg-size", cfg.msg_size, "Size of message size in bytes")->default_val(1024);
-
 #ifdef IO_URING_API
   app.add_option("-c,--buffer-count", cfg.buffer_count, "Number of buffers in pool prepared for each worker")
     ->default_val(2048);

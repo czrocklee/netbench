@@ -31,18 +31,12 @@ namespace bsd
   {
     sock_fd_ = ::socket(domain, type, protocol);
 
-    if (sock_fd_ < 0)
-    {
-      throw socket_exception{"socket creation failed"};
-    }
+    if (sock_fd_ < 0) { throw socket_exception{"socket creation failed"}; }
   }
 
   socket::~socket()
   {
-    if (sock_fd_ >= 0)
-    {
-      ::close(sock_fd_);
-    }
+    if (sock_fd_ >= 0) { ::close(sock_fd_); }
   }
 
   socket::socket(socket&& other) noexcept : sock_fd_{std::exchange(other.sock_fd_, -1)} {}
@@ -51,10 +45,7 @@ namespace bsd
   {
     if (this != &other)
     {
-      if (sock_fd_ >= 0)
-      {
-        ::close(sock_fd_);
-      }
+      if (sock_fd_ >= 0) { ::close(sock_fd_); }
 
       sock_fd_ = std::exchange(other.sock_fd_, -1);
     }
@@ -79,11 +70,9 @@ namespace bsd
 
     for (auto rp = result.get(); rp != nullptr; rp = rp->ai_next)
     {
-      if (::connect(sock_fd_, rp->ai_addr, rp->ai_addrlen) == 0)
-      {
-        return;
-      }
+      if (::connect(sock_fd_, rp->ai_addr, rp->ai_addrlen) == 0) { return; }
     }
+
     throw socket_exception{"connect failed to all addresses"};
   }
 
@@ -95,10 +84,7 @@ namespace bsd
     addr4.sin_family = AF_INET;
     addr4.sin_port = htons(port_num);
 
-    if (address.empty() || address == "0.0.0.0")
-    {
-      addr4.sin_addr.s_addr = INADDR_ANY;
-    }
+    if (address.empty() || address == "0.0.0.0") { addr4.sin_addr.s_addr = INADDR_ANY; }
     else if (::inet_pton(AF_INET, address.c_str(), &addr4.sin_addr) != 1)
     {
       throw std::runtime_error{"Invalid IPv4 address"};
@@ -112,13 +98,19 @@ namespace bsd
 
   void socket::listen(int backlog)
   {
-    if (::listen(sock_fd_, backlog) < 0)
-    {
-      throw socket_exception{"listen failed"};
-    }
+    if (::listen(sock_fd_, backlog) < 0) { throw socket_exception{"listen failed"}; }
   }
 
-  [[nodiscard]] ssize_t socket::send(void const* data, size_t size, int flags)
+  std::size_t socket::recv(void* buffer, std::size_t size, int flags)
+  {
+    if (auto bytes_read = ::recv(sock_fd_, buffer, size, flags); bytes_read < 0)
+    {
+      throw socket_exception{"recv failed"};
+    }
+    else { return bytes_read; }
+  }
+  
+  std::size_t socket::send(void const* data, size_t size, int flags)
   {
     if (auto bytes_sent = ::send(sock_fd_, data, size, flags); bytes_sent < 0)
     {
@@ -126,15 +118,9 @@ namespace bsd
       {
         return 0; // Non-blocking send, no data sent
       }
-      else
-      {
-        throw socket_exception{"send failed"};
-      }
+      else { throw socket_exception{"send failed"}; }
     }
-    else
-    {
-      return bytes_sent;
-    }
+    else { return bytes_sent; }
   }
 
   [[nodiscard]] socket socket::accept()
@@ -146,10 +132,7 @@ namespace bsd
     {
       throw socket_exception{"accept failed"};
     }
-    else
-    {
-      return socket{new_fd};
-    }
+    else { return socket{new_fd}; }
   }
 
   void socket::set_nodelay(bool enable)
@@ -166,24 +149,12 @@ namespace bsd
   {
     int flags = ::fcntl(sock_fd_, F_GETFL, 0);
 
-    if (flags < 0)
-    {
-      throw socket_exception{"fcntl F_GETFL failed"};
-    }
+    if (flags < 0) { throw socket_exception{"fcntl F_GETFL failed"}; }
 
-    if (enable)
-    {
-      flags |= O_NONBLOCK;
-    }
-    else
-    {
-      flags &= ~O_NONBLOCK;
-    }
+    if (enable) { flags |= O_NONBLOCK; }
+    else { flags &= ~O_NONBLOCK; }
 
-    if (::fcntl(sock_fd_, F_SETFL, flags) < 0)
-    {
-      throw socket_exception{"fcntl F_SETFL failed"};
-    }
+    if (::fcntl(sock_fd_, F_SETFL, flags) < 0) { throw socket_exception{"fcntl F_SETFL failed"}; }
   }
 
 } // namespace bsd

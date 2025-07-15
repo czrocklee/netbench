@@ -28,7 +28,6 @@ public:
   struct config
   {
     std::size_t buffer_size;
-    std::size_t msg_size;
 #ifdef IO_URING_API
     std::uint32_t uring_depth;
     std::uint16_t buffer_count;
@@ -73,6 +72,7 @@ private:
   };
 
   config config_;
+  std::size_t msg_size_;
   std::atomic<bool> stop_flag_{false};
   net::io_context io_ctx_;
 #ifdef IO_URING_API

@@ -37,7 +37,8 @@ namespace bsd
     void connect(const std::string& host, const std::string& port);
     void bind(const std::string& address, const std::string& port);
     void listen(int backlog);
-    ssize_t send(const void* data, size_t size, int flags);
+    std::size_t recv(void* buffer, std::size_t size, int flags);
+    std::size_t send(const void* data, std::size_t size, int flags);
 
     template<typename T>
     void set_option(int level, int optname, const T& optval)

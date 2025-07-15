@@ -1,6 +1,7 @@
 #pragma once
 
 #include "bsd/socket.hpp"
+#include "../common/metadata.hpp"
 
 #include <cstring>
 #include <iostream>
@@ -14,7 +15,7 @@ public:
   {
     if (msg_size < sizeof(std::uint64_t))
     {
-      throw std::runtime_error{"Message size must be at least 8 bytes to store send timestamp"};
+      throw std::runtime_error{"Message size must be at least 8 bytes to store timestamp"};
     }
 
     msg_.resize(msg_size, std::byte{static_cast<unsigned char>('a' + conn_id_ % 26)});
@@ -37,7 +38,9 @@ public:
 
     try
     {
+      metadata md{.msg_size = msg_.size()};
       sock_.connect(host, port);
+      sock_.send(&md, sizeof(md), 0);
       sock_.set_nonblocking(true);
     }
     catch (std::exception const& e)

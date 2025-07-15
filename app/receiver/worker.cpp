@@ -1,5 +1,7 @@
 #include "worker.hpp"
+#include "../common/metadata.hpp"
 #include "utility/time.hpp"
+
 #include <iostream>
 
 worker::worker(config cfg)
@@ -62,7 +64,21 @@ void worker::add_connection(net::socket sock)
 #ifdef BSD_API
     iter->receiver.set_read_limit(config_.read_limit);
 #endif
-    iter->partial_buffer = std::make_unique<std::byte[]>(config_.msg_size);
+
+    metadata md;
+#ifdef ASIO_API
+    sock.receive(::asio::buffer(&md, sizeof(md)), 0);
+#else
+    sock.recv(&md, sizeof(md), 0);
+#endif    
+    msg_size_ = md.msg_size;
+
+    if (msg_size_ < sizeof(std::uint64_t) || msg_size_ > config_.buffer_size)
+    {
+      throw std::runtime_error{std::format("Invalid message size from peer: {}", msg_size_)};
+    }
+     
+    iter->partial_buffer = std::make_unique<std::byte[]>(msg_size_);
     iter->receiver.open(std::move(sock));
     iter->receiver.start([this, iter](std::error_code ec, asio::const_buffer const data) {
       auto const now = utility::nanos_since_epoch();
@@ -86,11 +102,11 @@ void worker::add_connection(net::socket sock)
       if (!iter->partial_buffer_size > 0)
       {
         auto addr = reinterpret_cast<std::byte const*>(data_left.data());
-        auto size = std::min(config_.msg_size - iter->partial_buffer_size, data_left.size());
+        auto size = std::min(msg_size_ - iter->partial_buffer_size, data_left.size());
         std::memcpy(iter->partial_buffer.get() + iter->partial_buffer_size, addr, size);
         iter->partial_buffer_size += size;
 
-        if (iter->partial_buffer_size == config_.msg_size)
+        if (iter->partial_buffer_size == msg_size_)
         {
           on_new_msg(iter->partial_buffer.get());
           iter->partial_buffer_size = 0;
@@ -103,7 +119,7 @@ void worker::add_connection(net::socket sock)
       {
         auto addr = reinterpret_cast<std::byte const*>(data_left.data());
 
-        if (data_left.size() < config_.msg_size)
+        if (data_left.size() < msg_size_)
         {
           std::memcpy(iter->partial_buffer.get(), addr, data_left.size());
           iter->partial_buffer_size = data_left.size();
@@ -111,7 +127,7 @@ void worker::add_connection(net::socket sock)
         }
 
         on_new_msg(addr);
-        data_left += config_.msg_size;
+        data_left += msg_size_;
       }
 
       // Process the received data
