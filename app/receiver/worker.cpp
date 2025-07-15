@@ -213,7 +213,7 @@ void worker::run_busy_spin()
 #else
     while (!stop_flag_.load(std::memory_order::relaxed))
     {
-      for (auto i = 0; i < 1000; ++i) { io_ctx_.poll_wait(); }
+      for (auto i = 0; i < 1000; ++i) { io_ctx_.poll(); }
 
       process_pending_tasks();
     }
