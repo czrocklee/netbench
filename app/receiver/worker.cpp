@@ -81,7 +81,6 @@ void worker::add_connection(net::socket sock)
     iter->partial_buffer = std::make_unique<std::byte[]>(msg_size_);
     iter->receiver.open(std::move(sock));
     iter->receiver.start([this, iter](std::error_code ec, asio::const_buffer const data) {
-      auto const now = utility::nanos_since_epoch();
 
       if (ec)
       {
@@ -91,6 +90,7 @@ void worker::add_connection(net::socket sock)
       }
 
       auto const on_new_msg = [&](void const* buffer) {
+        auto const now = utility::nanos_since_epoch();
         std::uint64_t send_timestamp;
         std::memcpy(&send_timestamp, buffer, sizeof(send_timestamp));
         metrics_.msgs++;
