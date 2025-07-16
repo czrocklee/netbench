@@ -64,6 +64,24 @@ target_link_libraries(uring_client PRIVATE uring_lib utility_lib CLI11::CLI11)
 
 add_executable(syscall_overhead tool/syscall_overhead.c)
 
+set(PINGPONG_SOURCES
+    app/pingpong/main.cpp
+    app/pingpong/worker.cpp
+)
+
+add_executable(uring_pingpong ${PINGPONG_SOURCES})
+target_compile_definitions(uring_pingpong PRIVATE IO_URING_API)
+target_link_libraries(uring_pingpong PRIVATE uring_lib utility_lib CLI11::CLI11)
+
+add_executable(asio_pingpong ${PINGPONG_SOURCES})
+target_compile_definitions(asio_pingpong PRIVATE ASIO_API ASIO_STANDALONE ASIO_NO_DEPRECATED)
+target_link_libraries(asio_pingpong PRIVATE utility_lib CLI11::CLI11)
+
+add_executable(bsd_pingpong ${PINGPONG_SOURCES})
+target_compile_definitions(bsd_pingpong PRIVATE BSD_API)
+target_link_libraries(bsd_pingpong PRIVATE bsd_lib utility_lib CLI11::CLI11)
+
+
 # For example, if you're using Boost.Asio:
 # find_package(Boost REQUIRED COMPONENTS system)
 # target_link_libraries(asio_client Boost::system)
