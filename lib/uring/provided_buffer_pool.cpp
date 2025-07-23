@@ -103,7 +103,7 @@ namespace uring
 
   std::byte* provided_buffer_pool::get_buffer_address(buffer_id_type buf_id) const noexcept
   {
-    assert(buffer_id.value() >= buf_cnt_);
+    assert(buf_id.value() < buf_cnt_);
     return pool_memory_.get() + (buf_id.value() * buf_size_);
   }
 

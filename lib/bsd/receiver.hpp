@@ -21,7 +21,9 @@ namespace bsd
 
     void start(data_callback&& cb);
 
-    void set_read_limit(std::size_t limit) { read_limit_ = limit; }
+    void set_read_limit(std::size_t limit) noexcept { read_limit_ = limit; }
+
+    socket& get_socket() noexcept { return sock_; }
 
   private:
     static void on_events(uint32_t events, void* context);

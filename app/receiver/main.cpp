@@ -1,5 +1,7 @@
 #include "worker.hpp"
-#include "utility/metric_hud.hpp"
+#include "../common/utils.hpp"
+
+#include <utility/metric_hud.hpp>
 
 #include <CLI/CLI.hpp>
 #include <atomic>
@@ -18,20 +20,6 @@ void signal_handler(int /* signum */)
 {
   shutdown_flag = true;
 }
-
-namespace
-{
-  // Helper to split a "host:port" string into its components.
-  void parse_address(std::string const& full_address, std::string& host, std::string& port)
-  {
-    auto colon_pos = full_address.find(':');
-
-    if (colon_pos == std::string::npos) { throw std::runtime_error{"Invalid address format. Expected host:port"}; }
-
-    host = full_address.substr(0, colon_pos);
-    port = full_address.substr(colon_pos + 1);
-  }
-} // namespace
 
 int main(int argc, char** argv)
 {
@@ -85,10 +73,12 @@ int main(int argc, char** argv)
 #ifdef IO_URING_API
       io_uring_params params{};
       params.cq_entries = 65536;
+      params.flags |= IORING_SETUP_CQSIZE;
       params.flags |= IORING_SETUP_R_DISABLED;
       params.flags |= IORING_SETUP_SINGLE_ISSUER;
-      // params.flags |= IORING_SETUP_DEFER_TASKRUN;
-      params.flags |= IORING_SETUP_COOP_TASKRUN;
+      //params.flags |= IORING_SETUP_DEFER_TASKRUN;
+
+      params.flags |= (IORING_SETUP_COOP_TASKRUN | IORING_SETUP_TASKRUN_FLAG);
 
       cfg.buffer_group_id = static_cast<std::uint16_t>(i);
       cfg.params = params;

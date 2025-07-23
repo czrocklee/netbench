@@ -15,7 +15,6 @@ worker::worker(config cfg)
       uring::provided_buffer_pool::group_id_type{config_.buffer_group_id}},
 #elifdef ASIO_API
     io_ctx_{1},
-    work_guard_{::asio::make_work_guard(io_ctx_)},
 #endif
     pending_task_queue_{128}
 {
@@ -66,21 +65,17 @@ void worker::add_connection(net::socket sock)
 #endif
 
     metadata md;
-#ifdef ASIO_API
     sock.receive(::asio::buffer(&md, sizeof(md)), 0);
-#else
-    sock.recv(&md, sizeof(md), 0);
-#endif
-    msg_size_ = md.msg_size;
+    iter->msg_size = md.msg_size;
 
-    if (msg_size_ < sizeof(std::uint64_t) || msg_size_ > config_.buffer_size)
+    if (iter->msg_size < sizeof(std::uint64_t) || iter->msg_size > config_.buffer_size)
     {
-      throw std::runtime_error{std::format("Invalid message size from peer: {}", msg_size_)};
+      throw std::runtime_error{std::format("Invalid message size from peer: {}", iter->msg_size)};
     }
 
-    iter->partial_buffer = std::make_unique<std::byte[]>(msg_size_);
+    iter->partial_buffer = std::make_unique<std::byte[]>(iter->msg_size);
     iter->receiver.open(std::move(sock));
-    iter->receiver.start([this, iter](std::error_code ec, asio::const_buffer const data) {
+    iter->receiver.start([this, iter](std::error_code ec, ::asio::const_buffer const data) {
       if (ec)
       {
         std::cerr << "Error receiving data: " << ec.message() << std::endl;
@@ -113,7 +108,7 @@ bool worker::post(std::move_only_function<void()> task)
   return true;
 }
 
-void worker::on_data(connection& conn, asio::const_buffer const data)
+void worker::on_data(connection& conn, ::asio::const_buffer const data)
 {
   auto data_left = data;
 
@@ -124,11 +119,11 @@ void worker::on_data(connection& conn, asio::const_buffer const data)
   if (!conn.partial_buffer_size > 0)
   {
     auto addr = reinterpret_cast<std::byte const*>(data_left.data());
-    auto size = std::min(msg_size_ - conn.partial_buffer_size, data_left.size());
+    auto size = std::min(conn.msg_size - conn.partial_buffer_size, data_left.size());
     std::memcpy(conn.partial_buffer.get() + conn.partial_buffer_size, addr, size);
     conn.partial_buffer_size += size;
 
-    if (conn.partial_buffer_size == msg_size_)
+    if (conn.partial_buffer_size == conn.msg_size)
     {
       on_new_message(conn.partial_buffer.get());
       conn.partial_buffer_size = 0;
@@ -141,7 +136,7 @@ void worker::on_data(connection& conn, asio::const_buffer const data)
   {
     auto addr = reinterpret_cast<std::byte const*>(data_left.data());
 
-    if (data_left.size() < msg_size_)
+    if (data_left.size() < conn.msg_size)
     {
       std::memcpy(conn.partial_buffer.get(), addr, data_left.size());
       conn.partial_buffer_size = data_left.size();
@@ -149,7 +144,7 @@ void worker::on_data(connection& conn, asio::const_buffer const data)
     }
 
     on_new_message(addr);
-    data_left += msg_size_;
+    data_left += conn.msg_size;
   }
 
   metrics_.bytes += data.size();
@@ -159,10 +154,10 @@ void worker::on_data(connection& conn, asio::const_buffer const data)
 void worker::on_new_message(void const* buffer)
 {
   auto const now = utility::nanos_since_epoch();
-  std::uint64_t send_timestamp;
-  std::memcpy(&send_timestamp, buffer, sizeof(send_timestamp));
+  std::uint64_t send_ts;
+  std::memcpy(&send_ts, buffer, sizeof(send_ts));
   metrics_.msgs++;
-  metrics_.update_latency_histogram(now - send_timestamp);
+  metrics_.update_latency_histogram(now - send_ts);
 }
 
 void worker::process_pending_tasks()
@@ -181,6 +176,7 @@ void worker::run()
   try
   {
 #ifdef ASIO_API
+    auto work_guard = ::asio::make_work_guard(io_ctx_);
     io_ctx_.run();
 #else
     while (!stop_flag_.load(std::memory_order::relaxed))
@@ -209,6 +205,7 @@ void worker::run_busy_spin()
   try
   {
 #ifdef ASIO_API
+    auto work_guard = ::asio::make_work_guard(io_ctx_);
     while (!stop_flag_.load(std::memory_order::relaxed)) { io_ctx_.poll(); }
 #else
     while (!stop_flag_.load(std::memory_order::relaxed))

@@ -20,6 +20,8 @@ namespace uring
     
     void start(data_callback cb);
 
+    bsd::socket& get_socket() noexcept { return sock_; }
+
   private:
     static void on_multishot_recv(const ::io_uring_cqe& cqe, void* context);
     void new_multishot_recv_op();

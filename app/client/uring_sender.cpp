@@ -17,7 +17,7 @@ namespace client
       params.flags |= IORING_SETUP_R_DISABLED;
       params.flags |= IORING_SETUP_SINGLE_ISSUER;
       // params.flags |= IORING_SETUP_DEFER_TASKRUN;
-      // params.flags |= IORING_SETUP_COOP_TASKRUN;
+      params.flags |= (IORING_SETUP_COOP_TASKRUN | IORING_SETUP_TASKRUN_FLAG);
       return params;
     }
 

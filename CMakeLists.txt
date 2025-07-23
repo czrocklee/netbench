@@ -27,19 +27,19 @@ target_link_libraries(uring_receiver PRIVATE uring_lib utility_lib CLI11::CLI11)
 
 add_executable(asio_receiver ${RECEIVER_SOURCES})
 target_compile_definitions(asio_receiver PRIVATE ASIO_API ASIO_STANDALONE ASIO_NO_DEPRECATED)
-target_link_libraries(asio_receiver PRIVATE utility_lib CLI11::CLI11)
+target_link_libraries(asio_receiver PRIVATE rasio_lib utility_lib CLI11::CLI11)
 
 add_executable(asio_uring_receiver ${RECEIVER_SOURCES})
 target_compile_definitions(asio_uring_receiver PRIVATE ASIO_API ASIO_STANDALONE ASIO_NO_DEPRECATED ASIO_HAS_IO_URING ASIO_DISABLE_EPOLL)
-target_link_libraries(asio_uring_receiver PRIVATE utility_lib CLI11::CLI11 uring)
+target_link_libraries(asio_uring_receiver PRIVATE rasio_lib utility_lib CLI11::CLI11 uring)
 
 add_executable(asio_ioctx_mt_receiver app/receiver/worker.cpp app/receiver/asio_ioctx_mt.cpp)
 target_compile_definitions(asio_ioctx_mt_receiver PRIVATE ASIO_API ASIO_STANDALONE ASIO_NO_DEPRECATED )
-target_link_libraries(asio_ioctx_mt_receiver PRIVATE utility_lib CLI11::CLI11)
+target_link_libraries(asio_ioctx_mt_receiver PRIVATE rasio_lib utility_lib CLI11::CLI11)
 
 add_executable(asio_uring_ioctx_mt_receiver app/receiver/worker.cpp app/receiver/asio_ioctx_mt.cpp)
 target_compile_definitions(asio_uring_ioctx_mt_receiver PRIVATE ASIO_API ASIO_STANDALONE ASIO_NO_DEPRECATED ASIO_HAS_IO_URING ASIO_DISABLE_EPOLL)
-target_link_libraries(asio_uring_ioctx_mt_receiver PRIVATE utility_lib CLI11::CLI11 uring)
+target_link_libraries(asio_uring_ioctx_mt_receiver PRIVATE rasio_lib utility_lib CLI11::CLI11 uring)
 
 add_executable(bsd_receiver ${RECEIVER_SOURCES})
 target_compile_definitions(bsd_receiver PRIVATE BSD_API)
@@ -62,7 +62,7 @@ target_link_libraries(client PRIVATE bsd_lib utility_lib CLI11::CLI11)
 add_executable(uring_client app/client/uring.cpp app/client/uring_sender.cpp)
 target_link_libraries(uring_client PRIVATE uring_lib utility_lib CLI11::CLI11)
 
-add_executable(syscall_overhead tool/syscall_overhead.c)
+add_executable(syscall_overhead tool/syscall_overhead.cpp)
 
 set(PINGPONG_SOURCES
     app/pingpong/main.cpp
@@ -75,7 +75,7 @@ target_link_libraries(uring_pingpong PRIVATE uring_lib utility_lib CLI11::CLI11)
 
 add_executable(asio_pingpong ${PINGPONG_SOURCES})
 target_compile_definitions(asio_pingpong PRIVATE ASIO_API ASIO_STANDALONE ASIO_NO_DEPRECATED)
-target_link_libraries(asio_pingpong PRIVATE utility_lib CLI11::CLI11)
+target_link_libraries(asio_pingpong PRIVATE rasio_lib utility_lib CLI11::CLI11)
 
 add_executable(bsd_pingpong ${PINGPONG_SOURCES})
 target_compile_definitions(bsd_pingpong PRIVATE BSD_API)

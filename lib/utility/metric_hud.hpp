@@ -24,15 +24,20 @@ namespace utility
     std::unique_ptr<::hdr_histogram, decltype(&::hdr_close)> latency_hist{nullptr, ::hdr_close};
   };
 
+  struct sample
+  {
+    std::uint64_t send_ts;
+    std::uint64_t recv_ts;
+  };
+
   class metric_hud
   {
   public:
-    metric_hud(std::chrono::seconds interval, std::move_only_function<metric()> action)
-      : interval_(interval), action_(std::move(action))
-    {
-    }
+    metric_hud(std::chrono::seconds interval, std::move_only_function<metric()> action = nullptr);
 
     void tick();
+
+    void collect(sample s, std::chrono::steady_clock::time_point now);
 
   private:
     std::chrono::steady_clock::time_point start_time_;

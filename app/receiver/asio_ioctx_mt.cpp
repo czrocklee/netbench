@@ -1,6 +1,6 @@
-#include "utility/metric_hud.hpp"
-
-#include "rasio/tcp.hpp"
+#include "../common/utils.hpp"
+#include <utility/metric_hud.hpp>
+#include <rasio/tcp.hpp>
 using net = rasio::tcp;
 
 #include <CLI/CLI.hpp>
@@ -23,20 +23,6 @@ void signal_handler(int /* signum */) { shutdown_flag = true; }
 
 namespace
 {
-  // Helper to split a "host:port" string into its components.
-  void parse_address(std::string const& full_address, std::string& host, std::string& port)
-  {
-    auto colon_pos = full_address.find(':');
-
-    if (colon_pos == std::string::npos)
-    {
-      throw std::runtime_error{"Invalid address format. Expected host:port"};
-    }
-
-    host = full_address.substr(0, colon_pos);
-    port = full_address.substr(colon_pos + 1);
-  }
-
   struct connection
   {
     net::receiver receiver;

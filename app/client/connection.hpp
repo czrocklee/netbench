@@ -38,9 +38,9 @@ public:
 
     try
     {
-      metadata md{.msg_size = msg_.size()};
       sock_.connect(host, port);
-      sock_.send(&md, sizeof(md), 0);
+      metadata const md{.msg_size = msg_.size()};
+      sock_.send(::asio::buffer(&md, sizeof(md)), 0);
       sock_.set_nonblocking(true);
     }
     catch (std::exception const& e)

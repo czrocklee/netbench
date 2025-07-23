@@ -1,6 +1,7 @@
 #include "worker.hpp"
 #include "utility/time.hpp"
 
+#include <asio/ip/tcp.hpp>
 #include <iostream>
 
 worker::worker(config cfg)
@@ -10,43 +11,28 @@ worker::worker(config cfg)
     buffer_pool_{io_ctx_, config_.buffer_count, config_.buffer_size, uring::provided_buffer_pool::group_id_type{0}},
 #elifdef ASIO_API
     io_ctx_{1},
-    work_guard_{::asio::make_work_guard(io_ctx_)},
 #endif
-    pending_task_queue_{128}
+    sample_queue_{1024 * 64}
 {
-  metrics_.init_histogram();
 #ifdef IO_URING_API
   buffer_pool_.populate_buffers();
 #endif
 }
 
-worker::~worker()
+void worker::send_initial_message()
 {
-  stop();
-}
+  unsigned char c = 'a';
 
-void worker::start(bool busy_spin)
-{
-  thread_ = std::thread{[this, busy_spin] { busy_spin ? run_busy_spin() : run(); }};
-}
-
-void worker::stop()
-{
-  stop_flag_.store(true, std::memory_order::relaxed);
-
-  if (thread_.joinable())
+  for (auto& conn : connections_)
   {
-#ifndef ASIO_API
-    io_ctx_.wakeup();
-#else // ASIO_API
-    io_ctx_.stop();
-#endif
-    thread_.join();
-    std::cout << "worker thread " << std::this_thread::get_id() << " joined." << std::endl;
+    std::vector<std::byte> msg;
+    msg.resize(conn.msg_size, std::byte{c});
+    conn.send(::asio::buffer(msg), utility::nanos_since_epoch());
+    c = (c + 1) % 'a';
   }
 }
 
-void worker::add_connection(net::socket sock)
+void worker::add_connection(net::socket sock, std::size_t msg_size)
 {
   try
   {
@@ -55,14 +41,10 @@ void worker::add_connection(net::socket sock)
 #else
     auto iter = connections_.emplace(connections_.begin(), io_ctx_, config_.buffer_size);
 #endif
-
-#ifdef BSD_API
-    iter->receiver.set_read_limit(config_.read_limit);
-#endif
-
-    iter->sender.open(sock.native_handle());
+    iter->msg_size = msg_size;
+    sock.set_option(::asio::ip::tcp::no_delay{true});
     iter->receiver.open(std::move(sock));
-    iter->receiver.start([this, iter](std::error_code ec, asio::const_buffer const data) {
+    iter->receiver.start([this, iter](std::error_code ec, ::asio::const_buffer const data) {
       if (ec)
       {
         std::cerr << "Error receiving data: " << ec.message() << std::endl;
@@ -79,109 +61,45 @@ void worker::add_connection(net::socket sock)
   }
 }
 
-void worker::send_first_message()
+void worker::on_data(connection& conn, ::asio::const_buffer const data)
 {
-    if (connections_.empty())
+  if (data.size() != conn.msg_size)
+  {
+    std::cerr << "Partial read in pingpong test, not tolerable \n";
+    std::terminate();
+  }
+
+  if (conn.send_ts > 0)
+  {
+    auto now = utility::nanos_since_epoch();
+    auto send_ts = conn.send_ts;
+    conn.send(data, now);
+
+    constexpr auto warm_up_msg_cnt = 10000;
+    //std::cout << conn.msg_cnt << std::endl;
+
+    if (++conn.msg_cnt > warm_up_msg_cnt && !sample_queue_.push({.send_ts = send_ts, .recv_ts = now}))
     {
-        return;
+      std::cerr << "Failed to produce latency sample due to queue full\n";
+      std::terminate();
     }
-    auto& conn = connections_.front();
-    auto buffer = std::make_unique<std::byte[]>(config_.buffer_size);
-    conn.sender.send(asio::buffer(buffer.get(), config_.buffer_size), [this, &conn, buffer = std::move(buffer)](std::error_code ec, std::size_t bytes_transferred) {
-        if (ec)
-        {
-            std::cerr << "Error sending data: " << ec.message() << std::endl;
-            return;
-        }
-        metrics_.bytes += bytes_transferred;
-        metrics_.ops++;
-        metrics_.msgs++;
-    });
-}
-
-bool worker::post(std::move_only_function<void()> task)
-{
-#ifndef ASIO_API
-  if (!pending_task_queue_.push(std::move(task)))
-  {
-    std::cerr << "worker " << std::this_thread::get_id() << "task queue is full" << std::endl;
-    return false;
   }
-
-  io_ctx_.wakeup();
-#else  // ASIO_API
-  ::asio::post(io_ctx_, std::move(task));
-#endif // ASIO_API
-  return true;
+  else { conn.send(data, 0); }
 }
 
-void worker::on_data(connection& conn, asio::const_buffer const data)
-{
-    conn.sender.send(data, [this](std::error_code ec, std::size_t bytes_transferred) {
-        if (ec)
-        {
-            std::cerr << "Error sending data: " << ec.message() << std::endl;
-            return;
-        }
-        metrics_.bytes += bytes_transferred;
-        metrics_.ops++;
-        metrics_.msgs++;
-    });
-}
-
-void worker::process_pending_tasks()
-{
-  pending_task_queue_.consume_all([this](std::move_only_function<void()>&& task) { task(); });
-}
-
-void worker::run()
-{
-  std::cout << "worker thread " << std::this_thread::get_id() << " started." << std::endl;
-
-#ifdef IO_URING_API
-  io_ctx_.enable();
-#endif
-
-  try
-  {
-#ifdef ASIO_API
-    io_ctx_.run();
-#else
-    while (!stop_flag_.load(std::memory_order::relaxed))
-    {
-      io_ctx_.poll_wait();
-      process_pending_tasks();
-    }
-#endif
-  }
-  catch (std::exception const& e)
-  {
-    std::cerr << "Error in worker thread: " << e.what() << std::endl;
-  }
-
-  std::cout << "worker thread " << std::this_thread::get_id() << " stopping." << std::endl;
-}
-
-void worker::run_busy_spin()
+void worker::run(std::atomic<bool>& stop_flag)
 {
   std::cout << "worker thread " << std::this_thread::get_id() << " started with busy spin polling." << std::endl;
 
-#ifdef IO_URING_API
-  io_ctx_.enable();
-#endif
-
   try
   {
 #ifdef ASIO_API
-    while (!stop_flag_.load(std::memory_order::relaxed)) { io_ctx_.poll(); }
-#else
-    while (!stop_flag_.load(std::memory_order::relaxed))
-    {
-      for (auto i = 0; i < 1000; ++i) { io_ctx_.poll(); }
+    auto work_guard_ = ::asio::make_work_guard(io_ctx_);
+    while (!stop_flag.load(std::memory_order::relaxed)) { io_ctx_.poll(); }
 
-      process_pending_tasks();
-    }
-#endif
+#else
+    while (!stop_flag.load(std::memory_order::relaxed)) { io_ctx_.poll(); }
+#endif  
   }
   catch (std::exception const& e)
   {
@@ -189,4 +107,17 @@ void worker::run_busy_spin()
   }
 
   std::cout << "worker thread " << std::this_thread::get_id() << " stopping." << std::endl;
+}
+
+void worker::connection::send(::asio::const_buffer const data, std::uint64_t const send_ts)
+{
+  auto bytes = receiver.get_socket().send(data, 0);
+
+  if (bytes != data.size())
+  {
+    std::cerr << "Partial write in pingpong test, not tolerable \n";
+    std::terminate();
+  }
+
+  this->send_ts = send_ts;
 }

@@ -41,11 +41,6 @@ public:
   explicit worker(config cfg);
   ~worker();
 
-  worker(worker const&) = delete;
-  worker& operator=(worker const&) = delete;
-  worker(worker&&) = delete;
-  worker& operator=(worker&&) = delete;
-
   void start(bool busy_spin);
   void stop();
   void add_connection(net::socket sock);
@@ -64,26 +59,23 @@ private:
     }
 
     net::receiver receiver;
+    std::size_t msg_size;
     std::unique_ptr<std::byte[]> partial_buffer;
     std::size_t partial_buffer_size = 0;
   };
-
 
   void run();
   void run_busy_spin();
 
   void process_pending_tasks();
-  void on_data(connection& conn, asio::const_buffer const data);
+  void on_data(connection& conn, ::asio::const_buffer const data);
   void on_new_message(void const* buffer);
 
   config config_;
-  std::size_t msg_size_;
   std::atomic<bool> stop_flag_{false};
   net::io_context io_ctx_;
 #ifdef IO_URING_API
   uring::provided_buffer_pool buffer_pool_;
-#elifdef ASIO_API
-  asio::executor_work_guard<::asio::io_context::executor_type> work_guard_;
 #endif
   utility::metric metrics_{};
   std::list<connection> connections_;
