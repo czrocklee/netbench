@@ -63,7 +63,7 @@ namespace utility
   {
     auto const now = std::chrono::steady_clock::now();
     constexpr std::string_view format_line =
-      "{:>8} / {:8}    {:>8} / {:8}    {:>8} / {:8}    {:>8} / {:8}    {:>8}    {:>8}    {:>8}";
+      "{:>8} / {:8}  {:>8} / {:8}  {:>8} / {:8}  {:>8} / {:8}  {:>8}  {:>8}  {:>8}";
 
     // Only update if the interval has passed, or if it's the very first tick
     if (start_time_ == std::chrono::steady_clock::time_point{} || (now - last_time_checked_ >= interval_))
@@ -147,7 +147,7 @@ namespace utility
     if (start_time_ == std::chrono::steady_clock::time_point{} || (now - last_time_checked_ >= interval_))
     {
       constexpr std::string_view format_line =
-        "{:>8}    {:>8}    {:>8}    {:>8}    {:>8}    {:>8}    {:>8}    {:>8} / {:8}";
+        "{:>8}  {:>8}  {:>8}  {:>8}  {:>8}  {:>8}  {:>8}  {:>8} / {:8}";
       // Initialize start_time_ on the first actual tick
       if (start_time_ == std::chrono::steady_clock::time_point{})
       {
