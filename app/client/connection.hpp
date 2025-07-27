@@ -56,8 +56,8 @@ public:
   {
     if (bytes_remains_ == 0)
     {
-      std::uint64_t const now = utility::nanos_since_epoch();
-      std::memcpy(msg_.data(), &now, sizeof(now));
+      //std::uint64_t const now = utility::nanos_since_epoch();
+      //std::memcpy(msg_.data(), &now, sizeof(now));
     }
 
     ssize_t bytes_sent = 0;

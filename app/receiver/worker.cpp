@@ -153,11 +153,11 @@ void worker::on_data(connection& conn, ::asio::const_buffer const data)
 
 void worker::on_new_message(void const* buffer)
 {
-  auto const now = utility::nanos_since_epoch();
-  std::uint64_t send_ts;
-  std::memcpy(&send_ts, buffer, sizeof(send_ts));
+  //auto const now = utility::nanos_since_epoch();
+  //std::uint64_t send_ts;
+  //std::memcpy(&send_ts, buffer, sizeof(send_ts));
   metrics_.msgs++;
-  metrics_.update_latency_histogram(now - send_ts);
+  //metrics_.update_latency_histogram(now - send_ts);
 }
 
 void worker::process_pending_tasks()

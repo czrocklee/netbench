@@ -29,7 +29,7 @@ int main(int argc, char** argv)
   app.add_option("-a,--address", address_str, "Target address in host:port format")->default_val("0.0.0.0:8080");
 
   worker::config cfg;
-  app.add_option("-b,--buffer-size", cfg.buffer_size, "Size of receive buffer in bytes")->default_val(4096);
+  app.add_option("-b,--buffer-size", cfg.buffer_size, "Size of receive buffer in bytes")->default_val(1024);
 
 #ifdef IO_URING_API
   app.add_option("-c,--buffer-count", cfg.buffer_count, "Number of buffers in pool prepared for each worker")
@@ -73,7 +73,7 @@ int main(int argc, char** argv)
 #ifdef IO_URING_API
       io_uring_params params{};
       params.cq_entries = 65536;
-      params.flags |= IORING_SETUP_CQSIZE;
+     // params.flags |= IORING_SETUP_CQSIZE;
       params.flags |= IORING_SETUP_R_DISABLED;
       params.flags |= IORING_SETUP_SINGLE_ISSUER;
       //params.flags |= IORING_SETUP_DEFER_TASKRUN;
