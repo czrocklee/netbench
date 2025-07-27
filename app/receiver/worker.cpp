@@ -55,7 +55,8 @@ void worker::add_connection(net::socket sock)
   try
   {
 #ifdef IO_URING_API
-    auto iter = connections_.emplace(connections_.begin(), io_ctx_, buffer_pool_);
+    auto iter =
+      connections_.emplace(connections_.begin(), io_ctx_, buffer_pool_);
 #else
     auto iter = connections_.emplace(connections_.begin(), io_ctx_, config_.buffer_size);
 #endif
@@ -112,8 +113,8 @@ void worker::on_data(connection& conn, ::asio::const_buffer const data)
 {
   auto data_left = data;
 
-  // for most of the protocols(except text based ones), message that scattered on multiple buffers
-  // are difficult to handle, the most straightforward way to handle is to reconstruct them in a single flat
+  // for most of the protocols(except text based ones), message that scattered across multiple buffers
+  // is difficult to handle, the most straightforward way to process it is to reconstruct them in a single flat
   // buffer which may introduce some overhead.
 
   if (!conn.partial_buffer_size > 0)
@@ -153,11 +154,11 @@ void worker::on_data(connection& conn, ::asio::const_buffer const data)
 
 void worker::on_new_message(void const* buffer)
 {
-  //auto const now = utility::nanos_since_epoch();
-  //std::uint64_t send_ts;
-  //std::memcpy(&send_ts, buffer, sizeof(send_ts));
+  // auto const now = utility::nanos_since_epoch();
+  // std::uint64_t send_ts;
+  // std::memcpy(&send_ts, buffer, sizeof(send_ts));
   metrics_.msgs++;
-  //metrics_.update_latency_histogram(now - send_ts);
+  // metrics_.update_latency_histogram(now - send_ts);
 }
 
 void worker::process_pending_tasks()

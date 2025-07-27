@@ -108,8 +108,8 @@ namespace client
           if (sender.is_buffer_full()) { continue; }
 
           sender.send([&, this](void* buf, std::size_t size) {
-            std::uint64_t const now = utility::nanos_since_epoch();
-            std::memcpy(buf, &now, sizeof(now));
+            //std::uint64_t const now = utility::nanos_since_epoch();
+            //std::memcpy(buf, &now, sizeof(now));
             // std::memset(buffer, 'a' + (buffer_id_head_ % 26), size);
             return size; // msgs_sent % 1000 + 1; // Return the actual size written
           });

@@ -3,6 +3,7 @@
 #include "bsd/socket.hpp"
 #include "../common/metadata.hpp"
 
+#include <asio/buffer.hpp>
 #include <cstring>
 #include <iostream>
 #include <string>
@@ -54,18 +55,18 @@ public:
 
   bool try_send()
   {
-    if (bytes_remains_ == 0)
+    if (buf_.size() == 0)
     {
-      //std::uint64_t const now = utility::nanos_since_epoch();
-      //std::memcpy(msg_.data(), &now, sizeof(now));
+      std::uint64_t const now = utility::nanos_since_epoch();
+      std::memcpy(msg_.data(), &now, sizeof(now));
+      buf_ = ::asio::buffer(msg_.data(), msg_.size());
     }
 
     ssize_t bytes_sent = 0;
-    auto to_sent = msg_.size() - bytes_remains_;
 
     try
     {
-      bytes_sent = sock_.send(msg_.data() + bytes_remains_, to_sent, 0);
+      bytes_sent = sock_.send(buf_, 0);
     }
     catch (std::exception const& e)
     {
@@ -73,13 +74,13 @@ public:
       std::terminate();
     }
 
-    bytes_remains_ = to_sent - static_cast<std::size_t>(bytes_sent);
-    return bytes_remains_ == 0;
+    buf_ += bytes_sent;
+    return buf_.size() == 0;
   }
 
 private:
   int conn_id_;
   bsd::socket sock_;
   std::vector<std::byte> msg_;
-  std::size_t bytes_remains_ = 0;
+  ::asio::const_buffer buf_;
 };

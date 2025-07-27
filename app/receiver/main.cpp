@@ -72,13 +72,12 @@ int main(int argc, char** argv)
     {
 #ifdef IO_URING_API
       io_uring_params params{};
-      params.cq_entries = 65536;
-     // params.flags |= IORING_SETUP_CQSIZE;
+      params.cq_entries = 16384;
+      //params.flags |= IORING_SETUP_CQSIZE;
       params.flags |= IORING_SETUP_R_DISABLED;
       params.flags |= IORING_SETUP_SINGLE_ISSUER;
       //params.flags |= IORING_SETUP_DEFER_TASKRUN;
-
-      params.flags |= (IORING_SETUP_COOP_TASKRUN | IORING_SETUP_TASKRUN_FLAG);
+      params.flags |= (IORING_SETUP_COOP_TASKRUN); //| IORING_SETUP_TASKRUN_FLAG);
 
       cfg.buffer_group_id = static_cast<std::uint16_t>(i);
       cfg.params = params;

@@ -8,7 +8,7 @@
 
 int main(int argc, char** argv)
 {
-  CLI::App app{"TCP sender client"};
+  auto app = CLI::App{"TCP sender client"};
 
   std::string address;
   app.add_option("-a,--address", address, "Target address")->default_val("127.0.0.1:19004");
@@ -60,9 +60,16 @@ int main(int argc, char** argv)
   for (auto& s : ss) { s.start(host, port, bind_address, msg_size, nodelay); }
 
   auto collect_metric = [&] {
-    auto total_msgs_sent =
-      std::accumulate(ss.begin(), ss.end(), 0ul, [](auto count, auto& s) { return count + s.total_msgs_sent(); });
-    return utility::metric{.ops = total_msgs_sent, .bytes = total_msgs_sent * msg_size};
+    auto total_metric = utility::metric{};
+
+    for (auto& s : ss)
+    {
+      total_metric.ops += s.total_send_ops();
+      total_metric.msgs += s.total_msgs_sent();
+    }
+
+    total_metric.bytes = total_metric.msgs * msg_size;
+    return total_metric;
   };
 
   utility::metric_hud hud{std::chrono::seconds{5}, collect_metric};

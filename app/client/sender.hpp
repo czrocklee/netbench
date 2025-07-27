@@ -7,18 +7,8 @@
 #include <string>
 #include <thread>
 #include <chrono>
-#include <cstring> // For strerror, memset, memcpy
-#include <cstdlib> // For atoi (though std::stoi is preferred)
-#include <cerrno>  // For errno
-
-// BSD socket headers
-#include <sys/socket.h>
-#include <netinet/in.h> // For sockaddr_in
-#include <unistd.h>     // For close
-#include <netdb.h>      // For gethostbyname, h_errno, herror
-
-#include <thread>
 #include <random>
+#include <atomic>
 
 class sender
 {
@@ -48,6 +38,8 @@ public:
 
   std::uint64_t total_msgs_sent() const { return total_msgs_sent_.load(std::memory_order_relaxed); }
 
+  std::uint64_t total_send_ops() const { return total_send_ops_.load(std::memory_order_relaxed); }
+
 private:
   void run()
   {
@@ -59,18 +51,13 @@ private:
       auto const expected_msgs = static_cast<std::uint64_t>((now - start_time_) / interval_);
       // std::cout << interval_.count() << " " << (now - start_time_).count() << " " << expected_msgs << std::endl;
 
-      if (msgs_sent_ < expected_msgs)
+      for (auto msgs_sent = total_msgs_sent_.load(std::memory_order_relaxed); msgs_sent < expected_msgs;)
       {
-        if (conns_[conn_idx++].try_send())
-        {
-          total_msgs_sent_.store(total_msgs_sent_.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
-          ++msgs_sent_;
-        }
+        if (conns_[conn_idx++].try_send()) { total_msgs_sent_.store(++msgs_sent, std::memory_order_relaxed); }
 
-        if (conn_idx == conns_.size())
-        {
-          conn_idx = 0;
-        }
+        total_send_ops_.store(total_send_ops_.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
+
+        if (conn_idx == conns_.size()) { conn_idx = 0; }
       }
     }
   }
@@ -79,6 +66,6 @@ private:
   std::jthread _thread;
   std::chrono::steady_clock::duration const interval_;
   std::chrono::steady_clock::time_point start_time_;
-  std::uint64_t msgs_sent_ = 0;
+  std::atomic<std::uint64_t> total_send_ops_ = 0;
   std::atomic<std::uint64_t> total_msgs_sent_ = 0;
 };
