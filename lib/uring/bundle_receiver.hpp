@@ -20,6 +20,8 @@ namespace uring
 
     explicit bundle_receiver(io_context& io_ctx, provided_buffer_pool& buffer_pool);
 
+    ~bundle_receiver();
+
     void open(bsd::socket sock);
 
     void start(data_callback cb);

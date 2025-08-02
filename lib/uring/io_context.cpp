@@ -17,6 +17,8 @@ namespace uring
     }
 
     setup_wakeup_event();
+
+    ::io_uring_register_files_sparse(&ring_, 1024 * 64);
   }
 
   io_context::io_context(unsigned entries, ::io_uring_params& params)
@@ -27,6 +29,8 @@ namespace uring
     }
 
     setup_wakeup_event();
+        ::io_uring_register_files_sparse(&ring_, 1024 * 64);
+
   }
 
   io_context::~io_context()

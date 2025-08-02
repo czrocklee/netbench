@@ -12,9 +12,17 @@ namespace uring
     bundle_.reserve(buffer_pool.get_buffer_count());
   }
 
+  bundle_receiver::~bundle_receiver()
+  {
+    int set[] = {-1};
+    ::io_uring_register_files_update(io_ctx_.get_ring(), static_cast<unsigned int>(set[0]), set, 1);
+  }
+
   void bundle_receiver::open(bsd::socket sock)
   {
     sock_ = std::move(sock);
+    int set[] = {sock_.get_fd()};
+    ::io_uring_register_files_update(io_ctx_.get_ring(), static_cast<unsigned int>(set[0]), set, 1);
   }
 
   void bundle_receiver::start(data_callback cb)
@@ -33,7 +41,7 @@ namespace uring
       if (cqe.res == -ENOBUFS)
       {
         // Handle the case where no buffers are available
-        //std::cerr << "No buffers available for receiving data. fd=" << self.sock_.get_fd() << std::endl;
+        // std::cerr << "No buffers available for receiving data. fd=" << self.sock_.get_fd() << std::endl;
         if (!(cqe.flags & IORING_CQE_F_MORE)) { self.new_bundle_recv_op(); }
         return;
       }
@@ -86,6 +94,8 @@ namespace uring
     auto& sqe = io_ctx_.create_request(recv_req_data_);
     io_uring_prep_recv_multishot(&sqe, sock_.get_fd(), NULL, 0, 0);
     sqe.flags |= IOSQE_BUFFER_SELECT;
+    sqe.flags |= IOSQE_FIXED_FILE;
+
     sqe.buf_group = buffer_pool_.get_group_id();
     sqe.ioprio |= IORING_RECVSEND_BUNDLE;
   }
