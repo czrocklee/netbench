@@ -24,6 +24,10 @@ namespace uring
 
     void start(data_callback cb);
 
+    bsd::socket& get_socket() noexcept { return sock_; }
+
+    io_context& get_io_context() noexcept { return io_ctx_; }
+
   private:
     static void on_bundle_recv(::io_uring_cqe const& cqe, void* context);
     void new_bundle_recv_op();

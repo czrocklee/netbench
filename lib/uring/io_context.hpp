@@ -40,6 +40,13 @@ namespace uring
       void* context;
     };
 
+    struct fixed_file_req_data : req_data
+    {
+      fixed_file_req_data(handler_type h, void* ctx) : req_data{h, ctx} {}
+      fixed_file_req_data() = default;
+      int fd_idx = -1;
+    };
+  
     void setup_wakeup_event();
     static void on_wakeup(::io_uring_cqe const& cqe, void* context);
     void rearm_wakeup_event();

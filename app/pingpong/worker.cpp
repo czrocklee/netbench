@@ -9,6 +9,7 @@ worker::worker(config cfg)
 #ifdef IO_URING_API
     io_ctx_{config_.uring_depth, config_.params},
     buffer_pool_{io_ctx_, config_.buffer_count, config_.buffer_size, uring::provided_buffer_pool::group_id_type{0}},
+    fixed_buffer_pool_{io_ctx_, 1024, 4096},
 #elifdef ASIO_API
     io_ctx_{1},
 #endif
@@ -44,7 +45,11 @@ void worker::add_connection(net::socket sock, std::size_t msg_size)
     iter->msg_size = msg_size;
     sock.set_option(::asio::ip::tcp::no_delay{true});
     iter->receiver.open(std::move(sock));
-    iter->receiver.start([this, iter](std::error_code ec, ::asio::const_buffer const data) {
+#ifdef IO_URING_API
+    iter->sender.open(iter->receiver.get_socket());
+    iter->sender.enable_fixed_buffer_fastpath(fixed_buffer_pool_);
+#endif
+    iter->receiver.start([this, iter](std::error_code ec, auto&& data) {
       if (ec)
       {
         std::cerr << "Error receiving data: " << ec.message() << std::endl;
@@ -52,7 +57,11 @@ void worker::add_connection(net::socket sock, std::size_t msg_size)
         return;
       }
 
+#ifdef IO_URING_API
+      for (auto& buf : data) { on_data(*iter, buf); }
+#else
       on_data(*iter, data);
+#endif
     });
   }
   catch (std::exception const& e)
@@ -76,7 +85,7 @@ void worker::on_data(connection& conn, ::asio::const_buffer const data)
     conn.send(data, now);
 
     constexpr auto warm_up_msg_cnt = 10000;
-    //std::cout << conn.msg_cnt << std::endl;
+    // std::cout << conn.msg_cnt << std::endl;
 
     if (++conn.msg_cnt > warm_up_msg_cnt && !sample_queue_.push({.send_ts = send_ts, .recv_ts = now}))
     {
@@ -99,7 +108,7 @@ void worker::run(std::atomic<bool>& stop_flag)
 
 #else
     while (!stop_flag.load(std::memory_order::relaxed)) { io_ctx_.poll(); }
-#endif  
+#endif
   }
   catch (std::exception const& e)
   {
@@ -111,6 +120,18 @@ void worker::run(std::atomic<bool>& stop_flag)
 
 void worker::connection::send(::asio::const_buffer const data, std::uint64_t const send_ts)
 {
+#ifdef IO_URING_API
+  sender.send([data](void* buf, std::size_t size) {
+    if (size < data.size())
+    {
+      std::cerr << "Buffer size is smaller than data size, not tolerable in pingpong test\n";
+      std::terminate();
+    }
+
+    std::memcpy(buf, data.data(), data.size());
+    return data.size();
+  });
+#else
   auto bytes = receiver.get_socket().send(data, 0);
 
   if (bytes != data.size())
@@ -118,6 +139,7 @@ void worker::connection::send(::asio::const_buffer const data, std::uint64_t con
     std::cerr << "Partial write in pingpong test, not tolerable \n";
     std::terminate();
   }
+#endif
 
   this->send_ts = send_ts;
 }

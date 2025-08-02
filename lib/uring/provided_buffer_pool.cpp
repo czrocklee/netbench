@@ -3,6 +3,7 @@
 #include <cstring>
 #include <stdexcept>
 #include <cassert>
+#include <iostream>
 
 namespace uring
 {
@@ -13,25 +14,16 @@ namespace uring
     group_id_type grp_id)
     : ring_{*io_ctx.get_ring()}, buf_cnt_{buf_cnt}, buf_size_{buf_size}, grp_id_{grp_id}
   {
-    if (buf_cnt == 0)
-    {
-      throw std::invalid_argument{"Buffer count must be greater than zero"};
-    }
+    if (buf_cnt == 0) { throw std::invalid_argument{"Buffer count must be greater than zero"}; }
 
-    if (buf_size == 0)
-    {
-      throw std::invalid_argument{"Buffer size must be greater than zero"};
-    }
+    if (buf_size == 0) { throw std::invalid_argument{"Buffer size must be greater than zero"}; }
 
     std::size_t pool_size = buf_cnt_ * buf_size_;
     pool_memory_ = decltype(pool_memory_){
       static_cast<std::byte*>(::mmap(nullptr, pool_size, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0)),
       [pool_size](std::byte* ptr) { ::munmap(ptr, pool_size); }};
 
-    if (!pool_memory_)
-    {
-      throw std::runtime_error("Failed to allocate memory for buffer pool");
-    }
+    if (!pool_memory_) { throw std::runtime_error("Failed to allocate memory for buffer pool"); }
 
     int ret = 0;
     buf_ring_ = decltype(buf_ring_){
@@ -93,10 +85,13 @@ namespace uring
       }
     }
 
+   /*  std::cout << "Pushing buffers from " << buf_id_begin.value() << " to " << buf_id_end.value()
+              << ", total: " << offset << std::endl; */
     ::io_uring_buf_ring_advance(buf_ring_.get(), offset);
   }
 
-  void provided_buffer_pool::adjust_buffer_size(buffer_id_type buf_id, int offset) noexcept {
+  void provided_buffer_pool::adjust_buffer_size(buffer_id_type buf_id, int offset) noexcept
+  {
     actual_buf_size_[buf_id] += offset;
     assert(actual_buf_size_[buf_id] >= 0 && actual_buf_size_[buf_id] <= buf_size_);
   }
@@ -107,7 +102,7 @@ namespace uring
     return pool_memory_.get() + (buf_id.value() * buf_size_);
   }
 
-  ::asio::const_buffer provided_buffer_pool::get_buffer(buffer_id_type buf_id) const noexcept
+  ::asio::mutable_buffer provided_buffer_pool::get_buffer(buffer_id_type buf_id) const noexcept
   {
     return ::asio::buffer(get_buffer_address(buf_id), actual_buf_size_[buf_id]);
   }

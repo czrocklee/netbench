@@ -16,7 +16,7 @@ worker::worker(config cfg)
 #elifdef ASIO_API
     io_ctx_{1},
 #endif
-    pending_task_queue_{128}
+    pending_task_queue_{1024 * 1024}
 {
   metrics_.init_histogram();
 #ifdef IO_URING_API
@@ -55,8 +55,7 @@ void worker::add_connection(net::socket sock)
   try
   {
 #ifdef IO_URING_API
-    auto iter =
-      connections_.emplace(connections_.begin(), io_ctx_, buffer_pool_);
+    auto iter = connections_.emplace(connections_.begin(), io_ctx_, buffer_pool_);
 #else
     auto iter = connections_.emplace(connections_.begin(), io_ctx_, config_.buffer_size);
 #endif
@@ -76,7 +75,8 @@ void worker::add_connection(net::socket sock)
 
     iter->partial_buffer = std::make_unique<std::byte[]>(iter->msg_size);
     iter->receiver.open(std::move(sock));
-    iter->receiver.start([this, iter](std::error_code ec, ::asio::const_buffer const data) {
+
+    iter->receiver.start([this, iter](std::error_code ec, auto&& data) {
       if (ec)
       {
         std::cerr << "Error receiving data: " << ec.message() << std::endl;
@@ -84,7 +84,12 @@ void worker::add_connection(net::socket sock)
         return;
       }
 
+#ifdef IO_URING_API
+      for (auto& buf : data) { on_data(*iter, buf); }
+#else
       on_data(*iter, data);
+#endif
+      metrics_.ops++;
     });
   }
   catch (std::exception const& e)
@@ -149,7 +154,6 @@ void worker::on_data(connection& conn, ::asio::const_buffer const data)
   }
 
   metrics_.bytes += data.size();
-  metrics_.ops++;
 }
 
 void worker::on_new_message(void const* buffer)

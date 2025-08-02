@@ -100,30 +100,62 @@ tracepoint:io_uring:io_uring_submit_req
 {
 	// Decode the opcode for readability
 	$opcode_str = "UNKNOWN";
-	if (args->opcode == 0) { $opcode_str = "NOP"; }
-	if (args->opcode == 1) { $opcode_str = "READV"; }
-	if (args->opcode == 2) { $opcode_str = "WRITEV"; }
-	if (args->opcode == 3) { $opcode_str = "FSYNC"; }
-	if (args->opcode == 4) { $opcode_str = "READ_FIXED"; }
-	if (args->opcode == 5) { $opcode_str = "WRITE_FIXED"; }
-	if (args->opcode == 6) { $opcode_str = "POLL_ADD"; }
-	if (args->opcode == 7) { $opcode_str = "POLL_REMOVE"; }
-	if (args->opcode == 9) { $opcode_str = "SENDMSG"; }
+	if (args->opcode == 0)  { $opcode_str = "NOP"; }
+	if (args->opcode == 1)  { $opcode_str = "READV"; }
+	if (args->opcode == 2)  { $opcode_str = "WRITEV"; }
+	if (args->opcode == 3)  { $opcode_str = "FSYNC"; }
+	if (args->opcode == 4)  { $opcode_str = "READ_FIXED"; }
+	if (args->opcode == 5)  { $opcode_str = "WRITE_FIXED"; }
+	if (args->opcode == 6)  { $opcode_str = "POLL_ADD"; }
+	if (args->opcode == 7)  { $opcode_str = "POLL_REMOVE"; }
+	if (args->opcode == 8)  { $opcode_str = "SYNC_FILE_RANGE"; }
+	if (args->opcode == 9)  { $opcode_str = "SENDMSG"; }
 	if (args->opcode == 10) { $opcode_str = "RECVMSG"; }
 	if (args->opcode == 11) { $opcode_str = "TIMEOUT"; }
+	if (args->opcode == 12) { $opcode_str = "TIMEOUT_REMOVE"; }
 	if (args->opcode == 13) { $opcode_str = "ACCEPT"; }
 	if (args->opcode == 14) { $opcode_str = "ASYNC_CANCEL"; }
+	if (args->opcode == 15) { $opcode_str = "LINK_TIMEOUT"; }
 	if (args->opcode == 16) { $opcode_str = "CONNECT"; }
+	if (args->opcode == 17) { $opcode_str = "FALLOCATE"; }
 	if (args->opcode == 18) { $opcode_str = "OPENAT"; }
 	if (args->opcode == 19) { $opcode_str = "CLOSE"; }
+	if (args->opcode == 20) { $opcode_str = "FILES_UPDATE"; }
+	if (args->opcode == 21) { $opcode_str = "STATX"; }
 	if (args->opcode == 22) { $opcode_str = "READ"; }
 	if (args->opcode == 23) { $opcode_str = "WRITE"; }
+	if (args->opcode == 24) { $opcode_str = "FADVISE"; }
+	if (args->opcode == 25) { $opcode_str = "MADVISE"; }
 	if (args->opcode == 26) { $opcode_str = "SEND"; }
 	if (args->opcode == 27) { $opcode_str = "RECV"; }
+	if (args->opcode == 28) { $opcode_str = "OPENAT2"; }
 	if (args->opcode == 29) { $opcode_str = "EPOLL_CTL"; }
 	if (args->opcode == 30) { $opcode_str = "SPLICE"; }
 	if (args->opcode == 31) { $opcode_str = "PROVIDE_BUFFERS"; }
 	if (args->opcode == 32) { $opcode_str = "REMOVE_BUFFERS"; }
+	if (args->opcode == 33) { $opcode_str = "TEE"; }
+	if (args->opcode == 34) { $opcode_str = "SHUTDOWN"; }
+	if (args->opcode == 35) { $opcode_str = "RENAMEAT"; }
+	if (args->opcode == 36) { $opcode_str = "UNLINKAT"; }
+	if (args->opcode == 37) { $opcode_str = "MKDIRAT"; }
+	if (args->opcode == 38) { $opcode_str = "SYMLINKAT"; }
+	if (args->opcode == 39) { $opcode_str = "LINKAT"; }
+	if (args->opcode == 40) { $opcode_str = "MSG_RING"; }
+	if (args->opcode == 41) { $opcode_str = "FSETXATTR"; }
+	if (args->opcode == 42) { $opcode_str = "SETXATTR"; }
+	if (args->opcode == 43) { $opcode_str = "FGETXATTR"; }
+	if (args->opcode == 44) { $opcode_str = "GETXATTR"; }
+	if (args->opcode == 45) { $opcode_str = "SOCKET"; }
+	if (args->opcode == 46) { $opcode_str = "URING_CMD"; }
+	if (args->opcode == 47) { $opcode_str = "SEND_ZC"; }
+	if (args->opcode == 48) { $opcode_str = "SENDMSG_ZC"; }
+	if (args->opcode == 49) { $opcode_str = "SENDMSG_MULTISHOT"; }
+	if (args->opcode == 50) { $opcode_str = "ACCEPT_MULTISHOT"; }
+	if (args->opcode == 51) { $opcode_str = "FUTEX_WAIT"; }
+	if (args->opcode == 52) { $opcode_str = "FUTEX_WAKE"; }
+	if (args->opcode == 53) { $opcode_str = "FUTEX_WAITV"; }
+	if (args->opcode == 54) { $opcode_str = "FIXED_FD_INSTALL"; }
+	if (args->opcode == 55) { $opcode_str = "SENDMSG_FD"; }
 
 	printf("%-12u %-6d %-16s %-20s %-16s %-10s op=%s, user_data=%-12u flags=0x%x\n",
 		0, pid, comm, "SQE_SUBMIT", $opcode_str, "-",
@@ -139,14 +171,14 @@ tracepoint:io_uring:io_uring_complete
 	$res_str = "UNKNOWN";
 	if ((int32)args->res < 0) {
 		$errno = -args->res;
-    $res_str = @errno_map[$errno] != "" ? @errno_map[$errno] : "UNKNOWN";	
+	$res_str = @errno_map[$errno] != "" ? @errno_map[$errno] : "UNKNOWN";	
 	} else {
 		$res_str = str((int32)args->res);
 	}
 	
 
-	printf("%-12u %-6d %-16s %-20s %-16s %-10d op=%s, user_data=%-12u flags=0x%x\n",
-		0, pid, comm, "CQE_COMPLETE", "-", args->res,
+	printf("%-12u %-6d %-16s %-20s %-16d %-10s op=%s, user_data=%-12u flags=0x%x\n",
+		0, pid, comm, "CQE_COMPLETE", args->res, "-",
 		"XXX", args->user_data, args->cflags);
 
 	// Clean up the map entry

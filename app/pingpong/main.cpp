@@ -31,7 +31,7 @@ int main(int argc, char** argv)
   std::string address_str;
   app.add_option("-a,--address", address_str, "Target address in host:port format")->default_val("0.0.0.0:8080");
 
-  bool initiator;
+  bool initiator = false;
   app.add_flag("-i,--initiator", initiator, "Run as initiator");
 
   std::size_t msg_size;
@@ -73,6 +73,7 @@ int main(int argc, char** argv)
     io_uring_params params{};
     params.flags |= IORING_SETUP_SQPOLL;
     params.flags |= IORING_SETUP_SINGLE_ISSUER;
+    //params.flags |= (IORING_SETUP_COOP_TASKRUN); //| IORING_SETUP_TASKRUN_FLAG);
 
     if (sqpoll_cpu_affinity >= 0)
     {
@@ -80,7 +81,7 @@ int main(int argc, char** argv)
       params.sq_thread_cpu = sqpoll_cpu_affinity;
     }
 
-    params.sq_thread_idle = 1000;
+    params.sq_thread_idle = 0;
 
     cfg.params = params;
 #endif
@@ -137,7 +138,7 @@ int main(int argc, char** argv)
         pingponger.add_connection(std::move(new_sock), md.msg_size);
       });
 
-      //while (true) {};
+      // while (true) {};
       pingponger.run(shutdown_flag);
     }
   }

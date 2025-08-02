@@ -35,7 +35,7 @@ namespace uring
     void adjust_buffer_size(buffer_id_type buf_id, int offset) noexcept;
 
     [[nodiscard]] std::byte* get_buffer_address(buffer_id_type buf_id) const noexcept;
-    [[nodiscard]] ::asio::const_buffer get_buffer(buffer_id_type buf_id) const noexcept;
+    [[nodiscard]] ::asio::mutable_buffer get_buffer(buffer_id_type buf_id) const noexcept;
     [[nodiscard]] std::uint16_t get_group_id() const noexcept { return grp_id_.value(); }
     [[nodiscard]] std::size_t get_buffer_size() const noexcept { return buf_size_; }
     [[nodiscard]] std::uint16_t get_buffer_count() const noexcept { return buf_cnt_; }
@@ -45,8 +45,8 @@ namespace uring
     std::unique_ptr<::io_uring_buf_ring, std::function<void(::io_uring_buf_ring*)>> buf_ring_;
     std::unique_ptr<std::byte[], std::function<void(::std::byte*)>> pool_memory_;
     std::unique_ptr<std::size_t[]> actual_buf_size_;
-    std::uint16_t buf_cnt_ = 0;
-    std::size_t buf_size_ = 0;
-    group_id_type grp_id_{};
+    const std::uint16_t buf_cnt_ = 0;
+    const std::size_t buf_size_ = 0;
+    const group_id_type grp_id_{};
   };
 }

@@ -16,9 +16,10 @@ add_library(uring_lib
     uring/connector.cpp
     uring/io_context.cpp
     uring/provided_buffer_pool.cpp
+    uring/registered_buffer_pool.cpp
     uring/receiver.cpp
-    #uring/bundle_receiver.cpp
-    uring/sender.cpp
+    uring/bundle_receiver.cpp
+    uring/bundle_sender.cpp
 )
 
 target_include_directories(uring_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

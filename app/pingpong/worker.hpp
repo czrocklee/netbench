@@ -5,6 +5,7 @@
 
 #ifdef IO_URING_API
 #include "uring/tcp.hpp"
+#include <uring/bundle_sender.hpp>
 using net = uring::tcp;
 #elifdef ASIO_API
 #include "rasio/tcp.hpp"
@@ -55,6 +56,13 @@ private:
     void send(::asio::const_buffer const data, std::uint64_t const send_ts);
 
     net::receiver receiver;
+#ifdef IO_URING_API
+    uring::bundle_sender sender{
+      receiver.get_io_context(),
+      1024,
+      4096,
+      uring::provided_buffer_pool::group_id_type::cast_from(receiver.get_socket().get_fd())};
+#endif
     std::size_t msg_size = 0;
     std::uint64_t send_ts = 0;
     std::uint64_t msg_cnt = 0;
@@ -66,6 +74,7 @@ private:
   net::io_context io_ctx_;
 #ifdef IO_URING_API
   uring::provided_buffer_pool buffer_pool_;
+  uring::registered_buffer_pool fixed_buffer_pool_;
 #endif
   std::list<connection> connections_;
   boost::lockfree::spsc_queue<utility::sample> sample_queue_;

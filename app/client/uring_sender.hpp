@@ -3,7 +3,7 @@
 #include "bsd/socket.hpp"
 #include "uring/io_context.hpp"
 #include "uring/provided_buffer_pool.hpp"
-#include "uring/sender.hpp"
+#include "uring/bundle_sender.hpp"
 #include "../common/metadata.hpp"
 
 #include <iostream>
@@ -48,7 +48,7 @@ namespace client
     int id_;
     ::io_uring_params uring_params_;
     uring::io_context io_ctx_;
-    std::deque<uring::sender> senders_;
+    std::deque<uring::bundle_sender> senders_;
 
     std::chrono::steady_clock::time_point start_time_;
     std::chrono::nanoseconds interval_;
