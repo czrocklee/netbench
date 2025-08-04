@@ -6,10 +6,10 @@
 namespace uring
 {
 
-  bundle_receiver::bundle_receiver(io_context& io_ctx, utility::ref_or_own<provided_buffer_pool> buffer_pool)
-    : io_ctx_{io_ctx}, buffer_pool_{std::move(buffer_pool)}, recv_req_data_{on_bundle_recv, this}
+  bundle_receiver::bundle_receiver(io_context& io_ctx, provided_buffer_pool& buffer_pool)
+    : io_ctx_{io_ctx}, buffer_pool_{buffer_pool}, recv_req_data_{on_bundle_recv, this}
   {
-    bundle_.reserve(buffer_pool_.get().get_buffer_count());
+    bundle_.reserve(buffer_pool.get_buffer_count());
   }
 
   bundle_receiver::~bundle_receiver()
@@ -61,12 +61,12 @@ namespace uring
                   << std::endl; */
 
     do {
-      std::byte const* address = self.buffer_pool_.get().get_buffer_address(buf_id);
-      std::size_t const size = std::min(bytes_received, self.buffer_pool_.get().get_buffer_size());
+      std::byte const* address = self.buffer_pool_.get_buffer_address(buf_id);
+      std::size_t const size = std::min(bytes_received, self.buffer_pool_.get_buffer_size());
       self.bundle_.emplace_back(address, size);
       bytes_received -= size;
 
-      if (++buf_id == self.buffer_pool_.get().get_buffer_count()) { buf_id = buffer_id_type{0}; }
+      if (++buf_id == self.buffer_pool_.get_buffer_count()) { buf_id = buffer_id_type{0}; }
 
     } while (bytes_received > 0);
 
@@ -74,16 +74,16 @@ namespace uring
 
     // std::cout << "Recycling buffers: [" << buf_id_start.value() << ", " << buf_id.value() << ") for connection " <<
     // self.sock_.get_fd() << std::endl;
-    self.buffer_pool_.get().push_buffers(buf_id_begin, buf_id);
+    self.buffer_pool_.push_buffers(buf_id_begin, buf_id);
     /*     auto buf_id_end = buf_id;
     if (buf_id_end > buf_id_begin)
     {
-      for (auto i = buf_id_begin; i < buf_id_end; ++i) { self.buffer_pool_.get().push_buffer(i); }
+      for (auto i = buf_id_begin; i < buf_id_end; ++i) { self.buffer_pool_.push_buffer(i); }
     }
     else
     {
-      for (auto i = buf_id_begin; i < self.buffer_pool_.get().get_buffer_count(); ++i) { self.buffer_pool_.get().push_buffer(i); }
-      for (auto i = buffer_id_type{0}; i < buf_id_end; ++i) { self.buffer_pool_.get().push_buffer(i); }
+      for (auto i = buf_id_begin; i < self.buffer_pool_.get_buffer_count(); ++i) { self.buffer_pool_.push_buffer(i); }
+      for (auto i = buffer_id_type{0}; i < buf_id_end; ++i) { self.buffer_pool_.push_buffer(i); }
     } */
 
     if (!(cqe.flags & IORING_CQE_F_MORE)) { self.new_bundle_recv_op(); }
@@ -96,7 +96,7 @@ namespace uring
     sqe.flags |= IOSQE_BUFFER_SELECT;
     sqe.flags |= IOSQE_FIXED_FILE;
 
-    sqe.buf_group = buffer_pool_.get().get_group_id();
+    sqe.buf_group = buffer_pool_.get_group_id();
     sqe.ioprio |= IORING_RECVSEND_BUNDLE;
   }
 

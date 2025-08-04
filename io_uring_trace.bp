@@ -157,12 +157,9 @@ tracepoint:io_uring:io_uring_submit_req
 	if (args->opcode == 54) { $opcode_str = "FIXED_FD_INSTALL"; }
 	if (args->opcode == 55) { $opcode_str = "SENDMSG_FD"; }
 
-
-	$req = (struct io_kiocb *) args->req;
-
-	printf("%-12u %-6d %-16s %-20s %-16s %-10s op=%d, user_data=%-12u flags=0x%x\n",
+	printf("%-12u %-6d %-16s %-20s %-16s %-10s op=%s, user_data=%-12u flags=0x%x\n",
 		0, pid, comm, "SQE_SUBMIT", $opcode_str, "-",
-		(uint64)$req->file, args->user_data, args->flags);
+		"XXX", args->user_data, args->flags);
 }
 
 tracepoint:io_uring:io_uring_complete
