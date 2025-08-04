@@ -28,6 +28,9 @@ namespace utility
     {
     }
 
+    ref_or_own(ref_or_own &&) = default;
+    ref_or_own& operator=(ref_or_own &&) = default;
+
     // Access as reference
     T& get()
     {

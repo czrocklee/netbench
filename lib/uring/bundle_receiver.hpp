@@ -3,6 +3,7 @@
 #include "bsd/socket.hpp"
 #include "io_context.hpp"
 #include "provided_buffer_pool.hpp"
+#include <utility/ref_or_own.hpp>
 
 #include <asio/buffer.hpp>
 #include <asio/error.hpp>
@@ -18,7 +19,7 @@ namespace uring
   public:
     using data_callback = std::function<void(std::error_code, std::vector<::asio::const_buffer> const&)>;
 
-    explicit bundle_receiver(io_context& io_ctx, provided_buffer_pool& buffer_pool);
+    explicit bundle_receiver(io_context& io_ctx, utility::ref_or_own<provided_buffer_pool> buffer_pool);
 
     ~bundle_receiver();
 
@@ -36,7 +37,7 @@ namespace uring
 
     io_context& io_ctx_;
     bsd::socket sock_;
-    provided_buffer_pool& buffer_pool_;
+    utility::ref_or_own<provided_buffer_pool> buffer_pool_;
     io_context::req_data recv_req_data_;
     data_callback data_cb_;
     std::vector<::asio::const_buffer> bundle_;

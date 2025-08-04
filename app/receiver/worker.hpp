@@ -59,6 +59,9 @@ private:
     }
 
     net::receiver receiver;
+#ifdef IO_URING_API
+    //uring::provided_buffer_pool buffer_pool_;
+#endif
     std::size_t msg_size;
     std::unique_ptr<std::byte[]> partial_buffer;
     std::size_t partial_buffer_size = 0;
@@ -74,9 +77,6 @@ private:
   config config_;
   std::atomic<bool> stop_flag_{false};
   net::io_context io_ctx_;
-#ifdef IO_URING_API
-  uring::provided_buffer_pool buffer_pool_;
-#endif
   utility::metric metrics_{};
   std::list<connection> connections_;
   boost::lockfree::spsc_queue<std::move_only_function<void()>> pending_task_queue_;

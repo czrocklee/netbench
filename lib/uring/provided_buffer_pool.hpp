@@ -25,8 +25,8 @@ namespace uring
 
     provided_buffer_pool(provided_buffer_pool const&) = delete;
     provided_buffer_pool& operator=(provided_buffer_pool const&) = delete;
-    provided_buffer_pool(provided_buffer_pool&&) = delete;
-    provided_buffer_pool& operator=(provided_buffer_pool&&) = delete;
+    provided_buffer_pool(provided_buffer_pool&&) = default;
+    provided_buffer_pool& operator=(provided_buffer_pool&&) = default;
 
     void populate_buffers() noexcept;
     void push_buffer(buffer_id_type buf_id) noexcept;

@@ -8,11 +8,11 @@ worker::worker(config cfg)
   : config_{std::move(cfg)},
 #ifdef IO_URING_API
     io_ctx_{config_.uring_depth, config_.params},
-    buffer_pool_{
+/*     buffer_pool_{
       io_ctx_,
       config_.buffer_count,
       config_.buffer_size,
-      uring::provided_buffer_pool::group_id_type{config_.buffer_group_id}},
+      uring::provided_buffer_pool::group_id_type{config_.buffer_group_id}}, */
 #elifdef ASIO_API
     io_ctx_{1},
 #endif
@@ -20,7 +20,7 @@ worker::worker(config cfg)
 {
   metrics_.init_histogram();
 #ifdef IO_URING_API
-  buffer_pool_.populate_buffers();
+  // buffer_pool_.populate_buffers();
 #endif
 }
 
@@ -55,7 +55,13 @@ void worker::add_connection(net::socket sock)
   try
   {
 #ifdef IO_URING_API
-    auto iter = connections_.emplace(connections_.begin(), io_ctx_, buffer_pool_);
+    auto buffer_pool = uring::provided_buffer_pool{
+      io_ctx_,
+      config_.buffer_count,
+      config_.buffer_size,
+      uring::provided_buffer_pool::group_id_type::cast_from(sock.get_fd())};
+    buffer_pool.populate_buffers();
+    auto iter = connections_.emplace(connections_.begin(), io_ctx_, std::move(buffer_pool));
 #else
     auto iter = connections_.emplace(connections_.begin(), io_ctx_, config_.buffer_size);
 #endif
