@@ -6,7 +6,7 @@ namespace bsd
 {
 
   receiver::receiver(io_context& io_ctx, std::size_t buffer_size)
-    : io_ctx_{io_ctx}, event_data_{&receiver::on_events, this}
+    : io_ctx_{io_ctx}
   {
     buffer_.resize(buffer_size);
   }
@@ -20,7 +20,7 @@ namespace bsd
   void receiver::start(data_callback&& cb)
   {
     data_cb_ = std::move(cb);
-    io_ctx_.add(sock_.get_fd(), EPOLLIN | EPOLLERR | EPOLLET, &event_data_);
+    read_evt_ = io_ctx_.register_event(sock_.get_fd(), EPOLLIN | EPOLLERR | EPOLLET, &receiver::on_events, this);
   }
 
   void receiver::on_events(uint32_t events, void* context)
@@ -67,7 +67,7 @@ namespace bsd
           if ((bytes_read += n) >= read_limit_)
           {
             // Stop reading if the read limit is reached, rearm the socket for future read
-            io_ctx_.modify(sock_.get_fd(), EPOLLIN | EPOLLERR | EPOLLET, &event_data_);
+            read_evt_.rearm();
             break;
           }
         }

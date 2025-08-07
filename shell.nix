@@ -66,9 +66,9 @@ in
       gcc
       gdb
       boost.dev
-      #liburing
       mimalloc
       cli11
+      magic-enum
       hdrhistogram-c-lib
       zlib
       liburing-lib

@@ -5,6 +5,7 @@
 #include "receiver.hpp"
 #include "acceptor.hpp"
 #include "connector.hpp"
+#include "buffered_sender.hpp"
 
 namespace bsd
 {
@@ -16,5 +17,6 @@ namespace bsd
     using acceptor = bsd::acceptor;
     using connector = bsd::connector;
     using receiver = bsd::receiver;
+    using sender = bsd::buffered_sender;
   };
 }

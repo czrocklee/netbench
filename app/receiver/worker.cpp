@@ -76,6 +76,10 @@ void worker::add_connection(net::socket sock)
     iter->partial_buffer = std::make_unique<std::byte[]>(iter->msg_size);
     iter->receiver.open(std::move(sock));
 
+#ifdef BSD_API
+    if (config_.echo != config::echo_mode::none) { iter->sender.open(iter->receiver.get_socket()); }
+#endif
+
     iter->receiver.start([this, iter](std::error_code ec, auto&& data) {
       if (ec)
       {
@@ -84,12 +88,7 @@ void worker::add_connection(net::socket sock)
         return;
       }
 
-#ifdef IO_URING_API
-      for (auto& buf : data) { on_data(*iter, buf); }
-#else
       on_data(*iter, data);
-#endif
-      metrics_.ops++;
     });
   }
   catch (std::exception const& e)
@@ -135,6 +134,21 @@ void worker::on_data(connection& conn, ::asio::const_buffer const data)
       conn.partial_buffer_size = 0;
     }
 
+#ifdef BSD_API
+    if (config_.echo == config::echo_mode::per_op)
+    {
+      try
+      {
+        conn.sender.send(data.data(), data.size());
+      }
+      catch (std::exception const& e)
+      {
+        std::cerr << "Connection " << conn.receiver.get_socket().get_fd() << ": Echo send failed: " << e.what()
+                  << std::endl;
+      }
+    }
+#endif
+
     data_left += size;
   }
 
@@ -154,6 +168,7 @@ void worker::on_data(connection& conn, ::asio::const_buffer const data)
   }
 
   metrics_.bytes += data.size();
+  ++metrics_.ops;
 }
 
 void worker::on_new_message(void const* buffer)

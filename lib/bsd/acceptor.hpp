@@ -21,11 +21,11 @@ namespace bsd
 
   private:
     static void on_events(std::uint32_t events, void* context);
-    void handle_events(uint32_t events);
+    void handle_accept();
 
     io_context& io_ctx_;
     socket listen_sock_;
     accept_callback accept_cb_;
-    io_context::event_data event_data_;
+    io_context::event_handle accept_evt_;
   };
 }

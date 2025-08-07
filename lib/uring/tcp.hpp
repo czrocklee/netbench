@@ -2,6 +2,7 @@
 
 #include "bsd/socket.hpp"
 #include "io_context.hpp"
+#include "receiver.hpp"
 #include "bundle_receiver.hpp"
 #include "acceptor.hpp"
 #include "connector.hpp"
@@ -15,6 +16,6 @@ namespace uring
     using socket = bsd::socket;
     using acceptor = uring::acceptor;
     using connector = uring::connector;
-    using receiver = uring::bundle_receiver;
+    using receiver = uring::receiver;
   };
 }

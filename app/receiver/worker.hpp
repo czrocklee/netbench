@@ -27,6 +27,14 @@ class worker
 public:
   struct config
   {
+    enum class echo_mode
+    {
+      none = 0,
+      per_op,
+      per_msg
+    };
+
+    echo_mode echo = echo_mode::none;
     std::size_t buffer_size;
 #ifdef IO_URING_API
     std::uint32_t uring_depth;
@@ -59,6 +67,9 @@ private:
     }
 
     net::receiver receiver;
+#ifdef BSD_API
+    net::sender sender{receiver.get_io_context()};
+#endif
     std::size_t msg_size;
     std::unique_ptr<std::byte[]> partial_buffer;
     std::size_t partial_buffer_size = 0;

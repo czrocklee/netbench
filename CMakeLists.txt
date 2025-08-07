@@ -14,6 +14,7 @@ endif()
 find_package(CLI11 REQUIRED)
 find_package(Boost REQUIRED COMPONENTS headers)
 find_package(hdr_histogram REQUIRED)
+find_package(magic_enum REQUIRED)
 
 add_subdirectory(lib)
 

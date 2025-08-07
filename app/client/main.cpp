@@ -29,7 +29,10 @@ int main(int argc, char** argv)
   app.add_option("-z,--msg-size", msg_size, "Message size in bytes")->default_val(1024);
 
   bool nodelay;
-  app.add_option("-n,--nodelay", nodelay, "Enable TCP_NODELAY")->default_val(false);
+  app.add_flag("-n,--nodelay", nodelay, "Enable TCP_NODELAY")->default_val(false);
+
+  bool drain;
+  app.add_flag("-d,--drain", drain, "Enable receive buffer draining")->default_val(false);
 
   CLI11_PARSE(app, argc, argv);
 
@@ -58,6 +61,11 @@ int main(int argc, char** argv)
   for (auto i = 0; i < senders; ++i) { ss.emplace_back(i, conns, msg_size, msgs_per_sec / senders); }
 
   for (auto& s : ss) { s.start(host, port, bind_address, msg_size, nodelay); }
+
+  if (drain)
+  {
+    for (auto& s : ss) { s.enable_drain(); }
+  }
 
   auto collect_metric = [&] {
     auto total_metric = utility::metric{};

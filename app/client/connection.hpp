@@ -1,6 +1,7 @@
 #pragma once
 
-#include "bsd/socket.hpp"
+#include <bsd/socket.hpp>
+#include <bsd/io_context.hpp>
 #include "../common/metadata.hpp"
 
 #include <asio/buffer.hpp>
@@ -62,7 +63,7 @@ public:
       buf_ = ::asio::buffer(msg_.data(), msg_.size());
     }
 
-    ssize_t bytes_sent = 0;
+    std::size_t bytes_sent = 0;
 
     try
     {
@@ -74,13 +75,46 @@ public:
       std::terminate();
     }
 
+    if (bytes_to_drain_ >= 0)
+    {
+      bytes_to_drain_ += bytes_sent;
+
+      if (bytes_to_drain_ > 1024 * 16)
+      {
+        std::size_t bytes_read = 0;
+
+        do {
+          char dummy;
+          bytes_read = sock_.recv(
+            &dummy, 1024 * 1024, MSG_TRUNC | MSG_DONTWAIT); // Discard up to 1MB from the socket receive buffer
+        } while (bytes_read > 0);
+
+        bytes_to_drain_ = 0;
+      }
+    }
+
     buf_ += bytes_sent;
     return buf_.size() == 0;
   }
 
+  void enable_drain() { bytes_to_drain_ = 0; }
+
 private:
+  static void on_events(std::uint32_t, void* context)
+  {
+    auto& self = *static_cast<connection*>(context);
+    std::size_t bytes_read = 0;
+
+    do {
+      char dummy;
+      bytes_read = self.sock_.recv(
+        &dummy, 1024 * 1024, MSG_TRUNC | MSG_DONTWAIT); // Discard up to 1MB from the socket receive buffer
+    } while (bytes_read > 0);
+  }
+
   int conn_id_;
   bsd::socket sock_;
   std::vector<std::byte> msg_;
   ::asio::const_buffer buf_;
+  int bytes_to_drain_ = -1;
 };

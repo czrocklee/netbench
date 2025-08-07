@@ -36,6 +36,12 @@ public:
     _thread = std::jthread{[this] { run(); }};
   }
 
+  void enable_drain()
+  {
+    //io_ctx_ = std::make_unique<bsd::io_context>(1024);
+    for (auto& conn : conns_) { conn.enable_drain(); }
+  }
+
   std::uint64_t total_msgs_sent() const { return total_msgs_sent_.load(std::memory_order_relaxed); }
 
   std::uint64_t total_send_ops() const { return total_send_ops_.load(std::memory_order_relaxed); }

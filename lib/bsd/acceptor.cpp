@@ -1,13 +1,13 @@
 #include "acceptor.hpp"
 #include <fcntl.h>
 #include <utility>
+#include <iostream>
 
 namespace bsd
 {
   acceptor::acceptor(io_context& io_ctx) : io_ctx_{io_ctx}
   {
-    event_data_.handler = &acceptor::on_events;
-    event_data_.context = this;
+    std::cout << "Acceptor created. " << this << std::endl;
   }
 
   void acceptor::listen(std::string const& address, std::string const& port, int backlog)
@@ -23,36 +23,33 @@ namespace bsd
   void acceptor::start(accept_callback accept_cb)
   {
     accept_cb_ = std::move(accept_cb);
-    io_ctx_.add(listen_sock_.get_fd(), EPOLLIN | EPOLLET, &event_data_);
+    accept_evt_ =
+      io_ctx_.register_event(listen_sock_.get_fd(), EPOLLIN | EPOLLERR | EPOLLET, &acceptor::on_events, this);
   }
 
   void acceptor::on_events(uint32_t events, void* context)
   {
-    auto* self = static_cast<acceptor*>(context);
-    self->handle_events(events);
+    auto& self = *static_cast<acceptor*>(context);
+
+    if (events & EPOLLIN) { self.handle_accept(); }
   }
 
-  void acceptor::handle_events(uint32_t events)
+  void acceptor::handle_accept()
   {
-    if (events & EPOLLIN)
+    while (true)
     {
-      while (true)
+      try
       {
-        try
+        accept_cb_({}, listen_sock_.accept());
+      }
+      catch (bsd::socket_exception const& e)
+      {
+        if (e.code().value() != EAGAIN && e.code().value() != EWOULDBLOCK)
         {
-          accept_cb_({}, std::move(listen_sock_.accept()));
-        }
-        catch (bsd::socket_exception const& e)
-        {
-          if (e.code().value() == EAGAIN || e.code().value() == EWOULDBLOCK)
-          {
-            // All pending connections have been accepted.
-            break;
-          }
-
           accept_cb_(std::make_error_code(static_cast<std::errc>(e.code().value())), bsd::socket{});
-          break;
         }
+
+        break;
       }
     }
   }

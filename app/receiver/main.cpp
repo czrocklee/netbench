@@ -4,6 +4,8 @@
 #include <utility/metric_hud.hpp>
 
 #include <CLI/CLI.hpp>
+#include <magic_enum/magic_enum.hpp>
+
 #include <atomic>
 #include <csignal>
 #include <functional>
@@ -29,6 +31,18 @@ int main(int argc, char** argv)
   app.add_option("-a,--address", address_str, "Target address in host:port format")->default_val("0.0.0.0:8080");
 
   worker::config cfg;
+
+  std::map<std::string, worker::config::echo_mode> echo_mode_map;
+
+  for (auto const& entry : magic_enum::enum_entries<worker::config::echo_mode>())
+  {
+    echo_mode_map[std::string(entry.second)] = entry.first;
+  }
+
+  app.add_option("-e,--echo", cfg.echo, "Enable echo mode")
+    ->default_val(worker::config::echo_mode::none)
+    ->transform(CLI::CheckedTransformer(echo_mode_map, CLI::ignore_case));
+
   app.add_option("-b,--buffer-size", cfg.buffer_size, "Size of receive buffer in bytes")->default_val(1024);
 
 #ifdef IO_URING_API

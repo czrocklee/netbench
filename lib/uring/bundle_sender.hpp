@@ -85,12 +85,12 @@ namespace uring
   void bundle_sender::send(F&& f)
   {
     assert(!is_buffer_full_);
-    
-    //std::cout << "bundle_sender::send called with state: " << static_cast<int>(state_) << std::endl;
+
+    // std::cout << "bundle_sender::send called with state: " << static_cast<int>(state_) << std::endl;
     if (state_ == state::idle && fixed_buf_data_ && !fixed_buf_data_->pool.is_empty())
     {
       fixed_buf_data_->idx = fixed_buf_data_->pool.acquire_buffer();
-      const auto buffer = fixed_buf_data_->pool.get_buffer(fixed_buf_data_->idx);
+      auto const buffer = fixed_buf_data_->pool.get_buffer(fixed_buf_data_->idx);
       std::size_t const req_size = std::invoke(std::forward<F>(f), buffer.data(), buffer.size());
       fixed_buf_data_->buf = ::asio::buffer(buffer.data(), req_size);
       send_fastpath();

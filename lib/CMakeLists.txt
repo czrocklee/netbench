@@ -6,6 +6,7 @@ add_library(bsd_lib
     bsd/io_context.cpp
     bsd/socket.cpp
     bsd/receiver.cpp
+    bsd/buffered_sender.cpp
 )
 
 target_include_directories(bsd_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

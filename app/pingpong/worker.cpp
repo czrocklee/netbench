@@ -57,11 +57,7 @@ void worker::add_connection(net::socket sock, std::size_t msg_size)
         return;
       }
 
-#ifdef IO_URING_API
-      for (auto& buf : data) { on_data(*iter, buf); }
-#else
       on_data(*iter, data);
-#endif
     });
   }
   catch (std::exception const& e)

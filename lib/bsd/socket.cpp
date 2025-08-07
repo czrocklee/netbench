@@ -105,11 +105,15 @@ namespace bsd
   {
     if (auto bytes_read = ::recv(sock_fd_, buffer, size, flags); bytes_read < 0)
     {
-      throw socket_exception{"recv failed"};
+      if (errno == EAGAIN || errno == EWOULDBLOCK)
+      {
+        return 0; // Non-blocking send, no data sent
+      }
+      else { throw socket_exception{"recv failed"}; }
     }
     else { return bytes_read; }
   }
-  
+
   std::size_t socket::send(void const* data, size_t size, int flags)
   {
     if (auto bytes_sent = ::send(sock_fd_, data, size, flags); bytes_sent < 0)
@@ -123,7 +127,24 @@ namespace bsd
     else { return bytes_sent; }
   }
 
-  [[nodiscard]] socket socket::accept()
+  std::size_t socket::send(::iovec const* iov, std::size_t iovcnt, int flags)
+  {
+    ::msghdr msg{};
+    msg.msg_iov = const_cast<::iovec*>(iov);
+    msg.msg_iovlen = iovcnt;
+
+    if (auto bytes_sent = ::sendmsg(sock_fd_, &msg, flags); bytes_sent < 0)
+    {
+      if (errno == EAGAIN || errno == EWOULDBLOCK)
+      {
+        return 0; // Non-blocking send, no data sent
+      }
+      else { throw socket_exception{"sendv failed"}; }
+    }
+    else { return bytes_sent; }
+  }
+
+  socket socket::accept()
   {
     ::sockaddr_storage their_addr{};
     ::socklen_t addr_size = sizeof(their_addr);
