@@ -27,6 +27,6 @@ namespace uring
     io_context& io_ctx_;
     bsd::socket listen_sock_;
     accept_callback accept_cb_;
-    io_context::req_data accept_req_data_;
+    io_context::request_handle accept_handle_;
   };
 } // namespace uring

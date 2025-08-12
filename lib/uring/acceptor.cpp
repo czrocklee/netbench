@@ -5,7 +5,7 @@
 
 namespace uring
 {
-  acceptor::acceptor(io_context& io_ctx) : io_ctx_{io_ctx}, accept_req_data_{on_multishot_accept, this} {}
+  acceptor::acceptor(io_context& io_ctx) : io_ctx_{io_ctx} {}
 
   void acceptor::listen(std::string const& address, std::string const& port, int backlog)
   {
@@ -44,7 +44,8 @@ namespace uring
 
   void acceptor::new_multishot_accept_op()
   {
-    auto& sqe = io_ctx_.create_request(accept_req_data_);
+    accept_handle_ = io_ctx_.create_request(on_multishot_accept, this);
+    auto& sqe = accept_handle_.get_sqe();
     ::io_uring_prep_multishot_accept(&sqe, listen_sock_.get_fd(), nullptr, nullptr, 0);
   }
 

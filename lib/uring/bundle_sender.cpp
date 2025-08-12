@@ -11,7 +11,7 @@ namespace uring
     std::uint16_t max_buf_cnt,
     std::size_t max_buf_size,
     buffer_group_id_type group_id)
-    : io_ctx_{io_ctx}, buf_pool_{io_ctx, max_buf_cnt, max_buf_size, group_id}, send_req_data_{nullptr, this}
+    : io_ctx_{io_ctx}, buf_pool_{io_ctx, max_buf_cnt, max_buf_size, group_id}
   {
   }
 
@@ -89,14 +89,13 @@ namespace uring
   void bundle_sender::enable_fixed_buffer_fastpath(registered_buffer_pool& reg_buf_pool)
   {
     fixed_buf_data_ = std::make_unique<fixed_buffer_data>(reg_buf_pool);
-    fixed_buf_data_->send_req_data.handler = on_fixed_buffer_send_completion;
-    fixed_buf_data_->send_req_data.context = this;
   }
 
   void bundle_sender::send_fastpath()
   {
     state_ = state::fastpath;
-    auto& sqe = io_ctx_.create_request(fixed_buf_data_->send_req_data);
+    fixed_buf_data_->send_handle = io_ctx_.create_request(on_fixed_buffer_send_completion, this);
+    auto& sqe = fixed_buf_data_->send_handle.get_sqe();
     sqe.ioprio |= IORING_SEND_ZC_REPORT_USAGE;
     ::io_uring_prep_send_zc_fixed(
       &sqe,
@@ -110,22 +109,23 @@ namespace uring
 
   void bundle_sender::on_fixed_buffer_send_completion(::io_uring_cqe const& cqe, void* context)
   {
-    //std::cout << utility::nanos_since_epoch() << " on_fixed_buffer_send_completion res: " << cqe.res << ", flags: " << (cqe.flags & 0xFFFF) << std::endl;
+    // std::cout << utility::nanos_since_epoch() << " on_fixed_buffer_send_completion res: " << cqe.res << ", flags: "
+    // << (cqe.flags & 0xFFFF) << std::endl;
 
     auto& self = *static_cast<bundle_sender*>(context);
 
     if (cqe.flags & IORING_CQE_F_NOTIF)
     {
-/*       if (self.state_ == state::fastpath)
-      {
-        std::cout << "Fast path send completed successfully." << std::endl;
-        self.state_ = state::idle;
-        self.fixed_buf_data_->pool.release_buffer(self.fixed_buf_data_->idx);
-      } */
-     
+      /*       if (self.state_ == state::fastpath)
+            {
+              std::cout << "Fast path send completed successfully." << std::endl;
+              self.state_ = state::idle;
+              self.fixed_buf_data_->pool.release_buffer(self.fixed_buf_data_->idx);
+            } */
+
       if (self.state_ == state::fastpath_sending)
       {
-        //std::cout << "Fast path send completed successfully." << std::endl;
+        // std::cout << "Fast path send completed successfully." << std::endl;
         self.state_ = state::idle;
       }
 
@@ -140,12 +140,12 @@ namespace uring
       // fast path confirmed, start bundle send operation if there are buffers to send
       if (self.buf_id_head_ != self.buf_id_tail_ || self.is_buffer_full_) { self.start_bundle_send_operation(); }
       else { self.state_ = state::fastpath_sending; }
-/*       else
-      {
-        // std::cout << "Fast path send completed successfully." << std::endl;
-        self.state_ = state::idle;
-        self.fixed_buf_data_->pool.release_buffer(self.fixed_buf_data_->idx);
-      } */
+      /*       else
+            {
+              // std::cout << "Fast path send completed successfully." << std::endl;
+              self.state_ = state::idle;
+              self.fixed_buf_data_->pool.release_buffer(self.fixed_buf_data_->idx);
+            } */
     }
   }
 
@@ -157,12 +157,9 @@ namespace uring
 
       if (bytes < cur_buf.size())
       {
-        // std::cout << "starting retry send operation " << buf_id_head_.value() << " " << buf_id_tail_.value() <<
-        // std::endl;
-
         state_ = state::retrying;
-        send_req_data_.handler = on_retry_send_completion;
-        auto& sqe = io_ctx_.create_request(send_req_data_);
+        send_handle_ = io_ctx_.create_request(on_retry_send_completion, this);
+        auto& sqe = send_handle_.get_sqe();
         ::io_uring_prep_send(
           &sqe,
           get_socket().get_fd(),
@@ -188,8 +185,8 @@ namespace uring
     // std::cout << "starting bundle send operation " << buf_id_head_.value() << " " << buf_id_tail_.value() <<
     // std::endl;
     state_ = state::sending;
-    send_req_data_.handler = on_bundle_send_completion;
-    auto& sqe = io_ctx_.create_request(send_req_data_);
+    send_handle_ = io_ctx_.create_request(on_bundle_send_completion, this);
+    auto& sqe = send_handle_.get_sqe();
     ::io_uring_prep_send_bundle(&sqe, get_socket().get_fd(), 0, 0);
     sqe.buf_group = buf_pool_.get_group_id();
     sqe.flags |= IOSQE_BUFFER_SELECT;

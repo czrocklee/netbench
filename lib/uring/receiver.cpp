@@ -7,13 +7,14 @@
 namespace uring
 {
   receiver::receiver(io_context& io_ctx, provided_buffer_pool& buffer_pool)
-    : io_ctx_{io_ctx}, buffer_pool_{buffer_pool}, recv_req_data_{on_multishot_recv, this}
+    : io_ctx_{io_ctx}, buffer_pool_{buffer_pool}
   {
   }
 
   void receiver::open(bsd::socket sock)
   {
     sock_ = std::move(sock);
+    file_handle_ = io_ctx_.create_fixed_file(sock_.get_fd());
   }
 
   void receiver::start(data_callback cb)
@@ -55,7 +56,8 @@ namespace uring
 
   void receiver::new_multishot_recv_op()
   {
-    auto& sqe = io_ctx_.create_request(recv_req_data_);
+    recv_handle_ = io_ctx_.create_request(file_handle_, on_multishot_recv, this);
+    auto& sqe = recv_handle_.get_sqe();
     sqe.flags |= IOSQE_BUFFER_SELECT;
     sqe.buf_group = buffer_pool_.get_group_id();
     ::io_uring_prep_recv_multishot(&sqe, sock_.get_fd(), nullptr, 0, 0);

@@ -7,22 +7,19 @@ namespace uring
 {
 
   bundle_receiver::bundle_receiver(io_context& io_ctx, provided_buffer_pool& buffer_pool)
-    : io_ctx_{io_ctx}, buffer_pool_{buffer_pool}, recv_req_data_{on_bundle_recv, this}
+    : io_ctx_{io_ctx}, buffer_pool_{buffer_pool}
   {
     bundle_.reserve(buffer_pool.get_buffer_count());
   }
 
   bundle_receiver::~bundle_receiver()
   {
-    int set[] = {-1};
-    ::io_uring_register_files_update(io_ctx_.get_ring(), static_cast<unsigned int>(set[0]), set, 1);
+
   }
 
   void bundle_receiver::open(bsd::socket sock)
   {
     sock_ = std::move(sock);
-    int set[] = {sock_.get_fd()};
-    ::io_uring_register_files_update(io_ctx_.get_ring(), static_cast<unsigned int>(set[0]), set, 1);
   }
 
   void bundle_receiver::start(data_callback cb)
@@ -91,7 +88,8 @@ namespace uring
 
   void bundle_receiver::new_bundle_recv_op()
   {
-    auto& sqe = io_ctx_.create_request(recv_req_data_);
+    recv_handle_ = io_ctx_.create_request(on_bundle_recv, this);
+    auto& sqe = recv_handle_.get_sqe();
     io_uring_prep_recv_multishot(&sqe, sock_.get_fd(), NULL, 0, 0);
     sqe.flags |= IOSQE_BUFFER_SELECT;
     sqe.flags |= IOSQE_FIXED_FILE;

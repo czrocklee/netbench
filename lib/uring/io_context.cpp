@@ -5,45 +5,32 @@
 #include <stdexcept>
 #include <system_error>
 #include <unistd.h>
+#include <iostream>
 
 namespace uring
 {
-
   io_context::io_context(unsigned entries)
   {
-    if (int ret = io_uring_queue_init(entries, &ring_, 0); ret < 0)
-    {
-      throw std::system_error{-ret, std::system_category(), "io_uring_queue_init failed"};
-    }
-
-    setup_wakeup_event();
-
-    ::io_uring_register_files_sparse(&ring_, 1024 * 64);
+    ::io_uring_params params{};
+    init(entries, params);
   }
 
   io_context::io_context(unsigned entries, ::io_uring_params& params)
   {
-    if (int ret = io_uring_queue_init_params(entries, &ring_, &params); ret < 0)
-    {
-      throw std::system_error{-ret, std::system_category(), "io_uring_queue_init_params failed"};
-    }
-
-    setup_wakeup_event();
-        ::io_uring_register_files_sparse(&ring_, 1024 * 64);
-
+    init(entries, params);
   }
 
   io_context::~io_context()
   {
-    if (wakeup_fd_ != -1)
-    {
-      ::close(wakeup_fd_);
-    }
+    if (wakeup_fd_ != -1) { ::close(wakeup_fd_); }
 
     io_uring_queue_exit(&ring_);
   }
 
-  void io_context::enable() { ::io_uring_enable_rings(&ring_); }
+  void io_context::enable()
+  {
+    ::io_uring_enable_rings(&ring_);
+  }
 
   void io_context::poll()
   {
@@ -52,8 +39,7 @@ namespace uring
     if (int ret = io_uring_submit(&ring_); ret < 0)
     {
       // EINTR is a recoverable error, we can just try again on the next poll.
-      if (-ret == EINTR)
-        return;
+      if (-ret == EINTR) return;
 
       throw std::system_error{-ret, std::system_category(), "io_uring_submit failed"};
     }
@@ -62,10 +48,7 @@ namespace uring
 
     auto count = ::io_uring_peek_batch_cqe(&ring_, cqes, 16);
 
-    if (count == 0)
-    {
-      return;
-    }
+    if (count == 0) { return; }
 
     for (unsigned i = 0; i < count; ++i) { process_cqe(cqes[i]); }
 
@@ -78,8 +61,7 @@ namespace uring
     if (int ret = io_uring_submit_and_wait(&ring_, 1); ret < 0)
     {
       // EINTR is a recoverable error, we can just try again on the next poll.
-      if (-ret == EINTR)
-        return;
+      if (-ret == EINTR) return;
 
       throw std::system_error{-ret, std::system_category(), "io_uring_submit failed"};
     }
@@ -96,6 +78,55 @@ namespace uring
     }
 
     ::io_uring_cq_advance(&ring_, count);
+  }
+
+  io_context::fixed_file_handle io_context::create_fixed_file(int fd)
+  {
+    if (fd < 0) { throw std::invalid_argument("Invalid file descriptor for fixed_file_handle"); }
+
+    return fixed_file_handle{fd, fd < max_fixed_file_array_size ? this : nullptr};
+  }
+
+  io_context::request_handle io_context::create_request(handler_type handler, void* context)
+  {
+    ::io_uring_sqe* sqe = io_uring_get_sqe(&ring_);
+
+    if (!sqe) { throw std::runtime_error("io_uring submission queue is full"); }
+
+    std::size_t index = (sqe - ring_.sq.sqes);
+    req_data_array_[index] = req_data{.handler = handler, .context = context};
+    ::io_uring_sqe_set_data(sqe, &req_data_array_[index]);
+    return request_handle{sqe, &req_data_array_[index]};
+  }
+
+  io_context::request_handle
+  io_context::create_request(fixed_file_handle const& file, handler_type handler, void* context)
+  {
+    auto handle = create_request(handler, context);
+    auto& sqe = handle.get_sqe();
+    sqe.fd = file.get_fd();
+
+    if (file.has_fixed()) { sqe.flags |= IOSQE_FIXED_FILE; }
+
+    return handle;
+  }
+
+  void io_context::init(unsigned entries, ::io_uring_params& params)
+  {
+    if (int ret = io_uring_queue_init_params(entries, &ring_, &params); ret < 0)
+    {
+      throw std::system_error{-ret, std::system_category(), "io_uring_queue_init_params failed"};
+    }
+
+    req_data_array_ = std::make_unique<req_data[]>(params.sq_entries);
+
+    if (wakeup_fd_ = ::eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK); wakeup_fd_ < 0)
+    {
+      throw std::system_error{errno, std::system_category(), "eventfd creation failed"};
+    }
+
+    rearm_wakeup_event();
+    ::io_uring_register_files_sparse(&ring_, max_fixed_file_array_size);
   }
 
   void io_context::run_for_impl(__kernel_timespec const* ts)
@@ -127,28 +158,16 @@ namespace uring
     ::io_uring_cq_advance(&ring_, count);
   }
 
-  void io_context::setup_wakeup_event()
-  {
-    wakeup_fd_ = ::eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
-
-    if (wakeup_fd_ < 0)
-    {
-      throw std::system_error{errno, std::system_category(), "eventfd creation failed"};
-    }
-
-    wakeup_req_data_ = {on_wakeup, this};
-    rearm_wakeup_event();
-  }
-
   void io_context::rearm_wakeup_event()
   {
-    auto& sqe = create_request(wakeup_req_data_);
+    wakeup_handle_ = std::make_unique<request_handle>(create_request(on_wakeup, this));
+    auto& sqe = wakeup_handle_->get_sqe();
     ::io_uring_prep_read(&sqe, wakeup_fd_, &wakeup_buffer_, sizeof(wakeup_buffer_), 0);
   }
 
   void io_context::on_wakeup(::io_uring_cqe const& cqe, void* context)
   {
-    auto* self = static_cast<io_context*>(context);
+    auto& self = *static_cast<io_context*>(context);
 
     if (cqe.res < 0)
     {
@@ -157,40 +176,85 @@ namespace uring
       return;
     }
     // The read is complete, so we re-arm it for the next wakeup call.
-    self->rearm_wakeup_event();
+    self.rearm_wakeup_event();
   }
 
   void io_context::wakeup()
   {
-    uint64_t val = 1;
-    if (::write(wakeup_fd_, &val, sizeof(val)) < 0)
-    {
-      perror("write to eventfd failed");
-    }
+    if (std::uint64_t val = 1; ::write(wakeup_fd_, &val, sizeof(val)) < 0) { perror("write to eventfd failed"); }
   }
 
   void io_context::process_cqe(::io_uring_cqe* cqe)
   {
     auto* data = reinterpret_cast<req_data*>(::io_uring_cqe_get_data(cqe));
 
-    if (data && data->handler)
-    {
-      data->handler(*cqe, data->context);
-    }
+    if (data->handler != nullptr) { data->handler(*cqe, data->context); }
   }
 
-  ::io_uring_sqe& io_context::create_request(req_data& data)
+  io_context::request_handle::request_handle(::io_uring_sqe* sqe, io_context::req_data* data) : sqe_{sqe}, data_{data}
   {
-    ::io_uring_sqe* sqe = io_uring_get_sqe(&ring_);
-
-    if (!sqe)
-    {
-      throw std::runtime_error("io_uring submission queue is full");
-    }
-    // It's good practice to clear the SQE before use.
-    ::io_uring_prep_nop(sqe);
-    ::io_uring_sqe_set_data(sqe, &data);
-    return *sqe;
+    if (!sqe || !data) { throw std::invalid_argument("Invalid sqe or data for request_handle"); }
   }
 
+  io_context::request_handle::~request_handle()
+  {
+    if (data_ != nullptr) { data_->handler = nullptr; }
+  }
+
+  io_context::request_handle::request_handle(request_handle&& other) noexcept : sqe_{other.sqe_}, data_{other.data_}
+  {
+    other.sqe_ = nullptr;
+    other.data_ = nullptr;
+  }
+
+  io_context::request_handle& io_context::request_handle::operator=(request_handle&& other) noexcept
+  {
+    if (this != &other)
+    {
+      sqe_ = other.sqe_;
+      data_ = other.data_;
+      other.sqe_ = nullptr;
+      other.data_ = nullptr;
+    }
+
+    return *this;
+  }
+
+  io_context::fixed_file_handle::fixed_file_handle(int fd, io_context* io_ctx) : fd_{fd}, io_ctx_{io_ctx}
+  {
+    if (fd_ >= 0 && io_ctx_ != nullptr)
+    {
+      int set[] = {fd_};
+      ::io_uring_register_files_update(&io_ctx_->get_ring(), static_cast<unsigned int>(fd_), set, 1);
+    }
+  }
+
+  io_context::fixed_file_handle::~fixed_file_handle()
+  {
+    if (fd_ >= 0 && io_ctx_ != nullptr)
+    {
+      int set[] = {-1};
+      ::io_uring_register_files_update(&io_ctx_->get_ring(), static_cast<unsigned int>(fd_), set, 1);
+    }
+  }
+
+  io_context::fixed_file_handle::fixed_file_handle(fixed_file_handle&& other) noexcept
+    : fd_{other.fd_}, io_ctx_{other.io_ctx_}
+  {
+    other.fd_ = -1;
+    other.io_ctx_ = nullptr;
+  }
+
+  io_context::fixed_file_handle& io_context::fixed_file_handle::operator=(fixed_file_handle&& other) noexcept
+  {
+    if (this != &other)
+    {
+      fd_ = other.fd_;
+      io_ctx_ = other.io_ctx_;
+      other.fd_ = -1;
+      other.io_ctx_ = nullptr;
+    }
+
+    return *this;
+  }
 }

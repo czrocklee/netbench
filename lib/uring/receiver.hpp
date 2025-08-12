@@ -30,8 +30,9 @@ namespace uring
 
     io_context& io_ctx_;
     bsd::socket sock_;
+    io_context::fixed_file_handle file_handle_;
     provided_buffer_pool& buffer_pool_;
-    io_context::req_data recv_req_data_;
+    io_context::request_handle recv_handle_;
     data_callback data_cb_;
   };
 }

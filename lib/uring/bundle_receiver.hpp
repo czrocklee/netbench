@@ -37,7 +37,7 @@ namespace uring
     io_context& io_ctx_;
     bsd::socket sock_;
     provided_buffer_pool& buffer_pool_;
-    io_context::req_data recv_req_data_;
+    io_context::request_handle recv_handle_;
     data_callback data_cb_;
     std::vector<::asio::const_buffer> bundle_;
   };

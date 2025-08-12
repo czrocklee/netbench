@@ -59,15 +59,15 @@ namespace bsd
       }
     }
 
-    auto node_iter = std::find_if(vec.begin(), vec.end(), [](event const& e) { return e.disabled; });
+    auto node_iter = std::find_if(vec.begin(), vec.end(), [](event const& e) { return e.handler == nullptr; });
 
     if (node_iter == vec.end())
     {
-      vec.emplace_back(event{handler, context, false});
+      vec.emplace_back(event{handler, context});
       return event_handle{&*data_iter, vec.size() - 1};
     }
 
-    *node_iter = event{handler, context, false};
+    *node_iter = event{handler, context};
 
     return event_handle{&*data_iter, static_cast<std::size_t>(std::distance(vec.begin(), node_iter))};
   }
@@ -129,11 +129,11 @@ namespace bsd
         continue;
       }
 
-      auto* events = static_cast<event_node_vector_type*>(events_[i].data.ptr);
+      auto* events = static_cast<small_vec_type*>(events_[i].data.ptr);
 
       for (auto& event : *events)
       {
-        if (!event.disabled) [[likely]] { event.handler(events_[i].events, event.context); }
+        if (event.handler != nullptr) [[likely]] { event.handler(events_[i].events, event.context); }
       }
     }
   }
@@ -171,10 +171,11 @@ namespace bsd
   {
     if (data_ != nullptr)
     {
-      data_->second.events[index_].disabled = true;
+      data_->second.events[index_].handler = nullptr;
 
-      if (std::all_of(
-            data_->second.events.begin(), data_->second.events.end(), [](event const& e) { return e.disabled; }))
+      if (std::all_of(data_->second.events.begin(), data_->second.events.end(), [](event const& e) {
+            return e.handler == nullptr;
+          }))
       {
         data_->second.flags = 0;
 

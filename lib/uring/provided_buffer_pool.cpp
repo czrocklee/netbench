@@ -12,7 +12,7 @@ namespace uring
     std::uint16_t buf_cnt,
     std::size_t buf_size,
     group_id_type grp_id)
-    : ring_{*io_ctx.get_ring()}, buf_cnt_{buf_cnt}, buf_size_{buf_size}, grp_id_{grp_id}
+    : ring_{io_ctx.get_ring()}, buf_cnt_{buf_cnt}, buf_size_{buf_size}, grp_id_{grp_id}
   {
     if (buf_cnt == 0) { throw std::invalid_argument{"Buffer count must be greater than zero"}; }
 

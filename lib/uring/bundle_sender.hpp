@@ -57,7 +57,7 @@ namespace uring
       registered_buffer_pool& pool;
       registered_buffer_pool::buffer_index_type idx;
       ::asio::mutable_buffer buf;
-      io_context::req_data send_req_data;
+      io_context::request_handle send_handle;
     };
 
     io_context& io_ctx_;
@@ -67,7 +67,7 @@ namespace uring
     buffer_id_type buf_id_head_{0};
     buffer_id_type buf_id_tail_{0};
     bool is_buffer_full_ = false;
-    io_context::req_data send_req_data_;
+    io_context::request_handle send_handle_;
 
     enum class state
     {
