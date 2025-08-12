@@ -12,6 +12,7 @@ connection::connection(int conn_id, std::size_t msg_size) : conn_id_{conn_id}, s
   }
 
   msg_.resize(msg_size, std::byte{static_cast<unsigned char>('a' + conn_id_ % 26)});
+  std::fill_n(iov_, IOV_MAX, ::iovec{.iov_base = msg_.data(), .iov_len = msg_.size()});
 }
 
 void connection::connect(std::string const& host, std::string const& port, std::string const& bind_address)
@@ -43,20 +44,27 @@ void connection::connect(std::string const& host, std::string const& port, std::
   }
 }
 
-bool connection::try_send()
+std::size_t connection::try_send(std::size_t count)
 {
-  if (buf_.size() == 0)
+  std::size_t msgs_to_send = std::min(count, static_cast<std::size_t>(IOV_MAX));
+
+  /*
+  if (iov[0]_.iov_len == 0)
   {
-    std::uint64_t const now = utility::nanos_since_epoch();
-    std::memcpy(msg_.data(), &now, sizeof(now));
-    buf_ = ::asio::buffer(msg_.data(), msg_.size());
+    //std::uint64_t const now = utility::nanos_since_epoch();
+    //std::memcpy(msg_.data(), &now, sizeof(now));
+    iov_[i].iov_len = msg_.size();
   }
-  
+  else if (msg_.size() - iov[0]_.iov_len < sizeof(std::uint64_t)) // timestamp is not sent in last try
+  {
+    msg_to_send = 1;
+  }*/
+
   std::size_t bytes_sent = 0;
   
   try
   {
-    bytes_sent = sock_.send(buf_, 0);
+    bytes_sent = sock_.send(iov_, msgs_to_send, 0);
   }
   catch (std::exception const& e)
   {
@@ -70,8 +78,18 @@ bool connection::try_send()
     bytes_to_drain_ = 0;
   }
 
-  buf_ += bytes_sent;
-  return buf_.size() == 0;
+  if (bytes_sent < iov_[0].iov_len)
+  {
+    iov_[0].iov_base = reinterpret_cast<std::byte*>(iov_[0].iov_base) + bytes_sent;
+    iov_[0].iov_len -= bytes_sent;
+    return 0;
+  }
+  
+  auto bytes_sent_except_first = bytes_sent - iov_[0].iov_len;
+  auto offset = bytes_sent_except_first % msg_.size();
+  iov_[0].iov_base = msg_.data() + offset;
+  iov_[0].iov_len = msg_.size() - offset;
+  return 1 + bytes_sent_except_first / msg_.size();
 }
 
 void connection::enable_drain()

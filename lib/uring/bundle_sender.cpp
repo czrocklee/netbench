@@ -135,7 +135,7 @@ namespace uring
 
     if (cqe.res > 0)
     {
-      assert(cqe == self.fixed_buf_data_->buf.size());
+      assert(cqe.res == self.fixed_buf_data_->buf.size());
 
       // fast path confirmed, start bundle send operation if there are buffers to send
       if (self.buf_id_head_ != self.buf_id_tail_ || self.is_buffer_full_) { self.start_bundle_send_operation(); }

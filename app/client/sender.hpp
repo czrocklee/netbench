@@ -56,10 +56,15 @@ private:
       auto const now = std::chrono::steady_clock::now();
       auto const expected_msgs = static_cast<std::uint64_t>((now - start_time_) / interval_);
       // std::cout << interval_.count() << " " << (now - start_time_).count() << " " << expected_msgs << std::endl;
-
       for (auto msgs_sent = total_msgs_sent_.load(std::memory_order_relaxed); msgs_sent < expected_msgs;)
       {
-        if (conns_[conn_idx++].try_send()) { total_msgs_sent_.store(++msgs_sent, std::memory_order_relaxed); }
+        auto count = std::max((expected_msgs - msgs_sent) / conns_.size(), 1ul);
+
+        if (auto sent = conns_[conn_idx++].try_send(count); sent > 0) 
+        { 
+          msgs_sent += sent;
+          total_msgs_sent_.store(msgs_sent, std::memory_order_relaxed); 
+        }
 
         total_send_ops_.store(total_send_ops_.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
 

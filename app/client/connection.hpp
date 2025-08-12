@@ -19,7 +19,7 @@ public:
 
   void set_nodelay(bool enable) { sock_.set_nodelay(enable); }
 
-  bool try_send();
+  std::size_t try_send(std::size_t count);
 
   void enable_drain();
 
@@ -30,5 +30,6 @@ private:
   bsd::socket sock_;
   std::vector<std::byte> msg_;
   ::asio::const_buffer buf_;
+  ::iovec iov_[IOV_MAX];
   int bytes_to_drain_ = -1;
 };
