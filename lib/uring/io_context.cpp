@@ -6,6 +6,7 @@
 #include <system_error>
 #include <unistd.h>
 #include <iostream>
+#include <boost/icl/interval_set.hpp>
 
 namespace uring
 {
@@ -82,17 +83,38 @@ namespace uring
 
   io_context::fixed_file_handle io_context::create_fixed_file(int fd)
   {
+    constexpr static unsigned max_fixed_file_array_size = 1024 * 4;
+
+    class fixed_file_table
+    {
+    public:
+      fixed_file_table(io_context& ctx) : ctx_{ctx}
+      {
+        if (int ret = ::io_uring_register_files_sparse(&ctx_.get_ring(), max_fixed_file_array_size); ret < 0)
+        {
+          throw std::system_error{-ret, std::system_category(), "io_uring_register_files_sparse failed"};
+        }
+      }
+
+      ~fixed_file_table() { ::io_uring_unregister_files(&ctx_.get_ring()); }
+
+    private:
+      io_context& ctx_;
+    };
+
     if (fd < 0) { throw std::invalid_argument("Invalid file descriptor for fixed_file_handle"); }
+
+    if (!fixed_file_table_.has_value()) { fixed_file_table_.emplace<fixed_file_table>(*this); }
 
     return fixed_file_handle{fd, fd < max_fixed_file_array_size ? this : nullptr};
   }
 
   io_context::request_handle io_context::create_request(handler_type handler, void* context)
   {
-    ::io_uring_sqe* sqe = io_uring_get_sqe(&ring_);
+    ::io_uring_sqe* sqe = nullptr;
 
-    if (!sqe) { throw std::runtime_error("io_uring submission queue is full"); }
-
+    while ((sqe = io_uring_get_sqe(&ring_)) == nullptr) { io_uring_submit(&ring_); }
+    
     std::size_t index = (sqe - ring_.sq.sqes);
     req_data_array_[index] = req_data{.handler = handler, .context = context};
     ::io_uring_sqe_set_data(sqe, &req_data_array_[index]);
@@ -126,7 +148,6 @@ namespace uring
     }
 
     rearm_wakeup_event();
-    ::io_uring_register_files_sparse(&ring_, max_fixed_file_array_size);
   }
 
   void io_context::run_for_impl(__kernel_timespec const* ts)
@@ -225,7 +246,11 @@ namespace uring
     if (fd_ >= 0 && io_ctx_ != nullptr)
     {
       int set[] = {fd_};
-      ::io_uring_register_files_update(&io_ctx_->get_ring(), static_cast<unsigned int>(fd_), set, 1);
+
+      if (::io_uring_register_files_update(&io_ctx_->get_ring(), static_cast<unsigned int>(fd_), set, 1) < 0)
+      {
+        io_ctx_ = nullptr; // fail silently
+      }
     }
   }
 

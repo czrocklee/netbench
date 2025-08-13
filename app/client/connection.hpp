@@ -14,14 +14,12 @@ class connection
 {
 public:
   connection(int conn_id, std::size_t msg_size);
-
+  
   void connect(std::string const& host, std::string const& port, std::string const& bind_address = "");
-
-  void set_nodelay(bool enable) { sock_.set_nodelay(enable); }
-
   std::size_t try_send(std::size_t count);
-
+  
   void enable_drain();
+  void set_nodelay(bool enable) { sock_.set_nodelay(enable); }
 
 private:
   void try_drain_socket();

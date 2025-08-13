@@ -11,7 +11,14 @@ connection::connection(int conn_id, std::size_t msg_size) : conn_id_{conn_id}, s
     throw std::runtime_error{"Message size must be at least 8 bytes to store timestamp"};
   }
 
-  msg_.resize(msg_size, std::byte{static_cast<unsigned char>('a' + conn_id_ % 26)});
+  msg_.reserve(msg_size);
+  msg_.emplace_back(std::byte{'_'});
+
+  for (std::size_t i = 1; i < msg_size; ++i)
+  {
+    msg_.emplace_back(std::byte{static_cast<unsigned char>('a' + ((i + conn_id_ - 1) % 26))});
+  }
+
   std::fill_n(iov_, IOV_MAX, ::iovec{.iov_base = msg_.data(), .iov_len = msg_.size()});
 }
 
@@ -61,7 +68,7 @@ std::size_t connection::try_send(std::size_t count)
   }*/
 
   std::size_t bytes_sent = 0;
-  
+
   try
   {
     bytes_sent = sock_.send(iov_, msgs_to_send, 0);
@@ -84,7 +91,7 @@ std::size_t connection::try_send(std::size_t count)
     iov_[0].iov_len -= bytes_sent;
     return 0;
   }
-  
+
   auto bytes_sent_except_first = bytes_sent - iov_[0].iov_len;
   auto offset = bytes_sent_except_first % msg_.size();
   iov_[0].iov_base = msg_.data() + offset;
@@ -100,7 +107,7 @@ void connection::enable_drain()
 void connection::try_drain_socket()
 {
   std::size_t bytes_read = 0;
-  
+
   do {
     char dummy;
     bytes_read = sock_.recv(&dummy, 1024 * 1024, MSG_TRUNC | MSG_DONTWAIT);

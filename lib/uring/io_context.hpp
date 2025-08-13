@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <chrono>
 #include <type_traits>
+#include <any>
 
 namespace uring
 {
@@ -12,7 +13,7 @@ namespace uring
   public:
     ~io_context();
 
-    explicit io_context(unsigned entries = 1024);
+    explicit io_context(unsigned entries = 1024 * 16);
     io_context(unsigned entries, ::io_uring_params& params);
 
     void enable();
@@ -46,13 +47,12 @@ namespace uring
       void* context;
     };
 
-    constexpr static unsigned max_fixed_file_array_size = 1024 * 64;
-
     ::io_uring ring_;
     int wakeup_fd_ = -1;
     std::uint64_t wakeup_buffer_;
     std::unique_ptr<request_handle> wakeup_handle_;
     std::unique_ptr<req_data[]> req_data_array_;
+    std::any fixed_file_table_;
 
     friend class connection;
     friend class acceptor;

@@ -49,7 +49,7 @@ int main(int argc, char** argv)
   app.add_option("-c,--buffer-count", cfg.buffer_count, "Number of buffers in pool prepared for each worker")
     ->default_val(2048);
 
-  app.add_option("-d,--uring-depth", cfg.uring_depth, "io_uring queue depth")->default_val(512);
+  app.add_option("-d,--uring-depth", cfg.uring_depth, "io_uring queue depth")->default_val(1024 * 16);
 #elifdef BSD_API
   app.add_option("-l,--read-limit", cfg.read_limit, "Optional read limit for BSD API (0 for no limit)")
     ->default_val(1024 * 64);

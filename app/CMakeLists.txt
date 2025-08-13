@@ -27,12 +27,11 @@ target_link_libraries(asio_uring_ioctx_mt_receiver PRIVATE rasio_lib utility_lib
 add_executable(bsd_receiver ${RECEIVER_SOURCES})
 target_compile_definitions(bsd_receiver PRIVATE BSD_API)
 target_link_libraries(bsd_receiver PRIVATE bsd_lib utility_lib CLI11::CLI11)
+
 # Client targets
-add_executable(client client/main.cpp client/connection.cpp)
+add_executable(client client/main.cpp client/connection.cpp client/sender.cpp)
 target_link_libraries(client PRIVATE bsd_lib utility_lib CLI11::CLI11)
 
-add_executable(uring_client client/uring.cpp client/uring_sender.cpp)
-target_link_libraries(uring_client PRIVATE uring_lib utility_lib CLI11::CLI11)
 
 # Pingpong targets
 set(PINGPONG_SOURCES

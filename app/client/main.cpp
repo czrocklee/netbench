@@ -60,7 +60,7 @@ int main(int argc, char** argv)
 
   for (auto i = 0; i < senders; ++i) { ss.emplace_back(i, conns, msg_size, msgs_per_sec / senders); }
 
-  for (auto& s : ss) { s.start(host, port, bind_address, msg_size, nodelay); }
+  for (auto& s : ss) { s.start(host, port, bind_address, nodelay); }
 
   if (drain)
   {
