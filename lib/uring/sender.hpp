@@ -67,6 +67,7 @@ namespace uring
       buf_data.index = buf_pool_.acquire_buffer();
       auto buf = buf_pool_.get_buffer(buf_data.index);
       buf_data.size = std::invoke(std::forward<F>(f), buf.data(), buf.size());
+      //std::cout << "buffer acquired " << buf_data.index << std::endl;  
       return buf;
     };
 
@@ -91,7 +92,7 @@ namespace uring
         {
           append_to_buf(head_buf_);
           last_send_sqe_->len = head_buf_.size; // update the send length
-          std::cout << "update length to " << last_send_sqe_->len << std::endl;
+          //std::cout << "update length to " << last_send_sqe_->len << std::endl;
 
           return;
         }
@@ -99,6 +100,8 @@ namespace uring
 
       write_list_.push_back();
       acquire_new_buf(write_list_.back());
+
+      std::cout << "write_list started to be built " << write_list_.size() << std::endl;
       return;
     }
 
@@ -112,5 +115,6 @@ namespace uring
 
     write_list_.push_back();
     acquire_new_buf(write_list_.back());
+    std::cout << "write_list keep building " << write_list_.size() << std::endl;
   }
 }

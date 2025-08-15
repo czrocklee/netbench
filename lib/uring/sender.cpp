@@ -22,6 +22,7 @@ namespace uring
 
   void sender::start_send_operation(void const* data, std::size_t size, buffer_index_type buf_index)
   {
+    if (size == 0) std::terminate();
     state_ = state::zc_sending;
     auto& sqe = io_ctx_.create_request(send_handle_, get_socket().get_file_handle(), on_send_completion, this);
     sqe.ioprio |= IORING_SEND_ZC_REPORT_USAGE;
@@ -50,6 +51,8 @@ namespace uring
       return;
     }
 
+    if (cqe.res > 32) std::cout << "completion: " << cqe.res << std::endl;
+
     // If partial send, resend the remaining data
     if (auto bytes_sent = static_cast<std::size_t>(cqe.res); bytes_sent < self.head_buf_.size)
     {
@@ -64,6 +67,7 @@ namespace uring
     assert(self.head_buf_.size == static_cast<std::size_t>(cqe.res));
     //self.pending_zc_notif_.push_back(self.head_buf_.index);
     self.buf_pool_.release_buffer(self.head_buf_.index);
+    //std::cout << cqe.user_data << " buffer released " << self.head_buf_.index << " with size " << self.head_buf_.size << std::endl;  
 
     // If there are queued buffers, send the next one
     if (!self.write_list_.empty())
@@ -72,6 +76,7 @@ namespace uring
       self.write_list_.pop_front();
       auto buf = self.buf_pool_.get_buffer(self.head_buf_.index);
       self.start_send_operation(buf.data(), self.head_buf_.size, self.head_buf_.index);
+      std::cout << "write_list consumed " << self.write_list_.size() << std::endl;
       return;
     }
 

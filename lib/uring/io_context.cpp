@@ -80,6 +80,7 @@ namespace uring
       ++count;
     }
 
+    std::cout << "cqe count this round " << count << std::endl;
     ::io_uring_cq_advance(&ring_, count);
   }
 
