@@ -8,7 +8,7 @@ worker::worker(config cfg)
   : config_{std::move(cfg)},
 #ifdef IO_URING_API
     io_ctx_{config_.uring_depth, config_.params},
-    buffer_pool_{
+    recv_pool_{
       io_ctx_,
       config_.buffer_count,
       config_.buffer_size,
@@ -20,7 +20,10 @@ worker::worker(config cfg)
 {
   metrics_.init_histogram();
 #ifdef IO_URING_API
-  buffer_pool_.populate_buffers();
+  recv_pool_.populate_buffers();
+
+  if (config_.echo != config::echo_mode::none) { io_ctx_.init_buffer_pool(config_.buffer_count, 4096); }
+
 #endif
 }
 
@@ -55,7 +58,8 @@ void worker::add_connection(net::socket sock)
   try
   {
 #ifdef IO_URING_API
-    auto iter = connections_.emplace(connections_.begin(), io_ctx_, buffer_pool_);
+    sock.fix_file_handle(io_ctx_);
+    auto iter = connections_.emplace(connections_.begin(), io_ctx_, recv_pool_);
 #else
     auto iter = connections_.emplace(connections_.begin(), io_ctx_, config_.buffer_size);
 #endif
@@ -76,9 +80,7 @@ void worker::add_connection(net::socket sock)
     iter->partial_buffer = std::make_unique<std::byte[]>(iter->msg_size);
     iter->receiver.open(std::move(sock));
 
-#ifdef BSD_API
     if (config_.echo != config::echo_mode::none) { iter->sender.open(iter->receiver.get_socket()); }
-#endif
 
     iter->receiver.start([this, iter](std::error_code ec, auto&& data) {
       if (ec)
@@ -134,21 +136,6 @@ void worker::on_data(connection& conn, ::asio::const_buffer const data)
       conn.partial_buffer_size = 0;
     }
 
-#ifdef BSD_API
-    if (config_.echo == config::echo_mode::per_op)
-    {
-      try
-      {
-        conn.sender.send(data.data(), data.size());
-      }
-      catch (std::exception const& e)
-      {
-        std::cerr << "Connection " << conn.receiver.get_socket().get_fd() << ": Echo send failed: " << e.what()
-                  << std::endl;
-      }
-    }
-#endif
-
     data_left += size;
   }
 
@@ -165,6 +152,19 @@ void worker::on_data(connection& conn, ::asio::const_buffer const data)
 
     on_new_message(addr);
     data_left += conn.msg_size;
+  }
+
+  if (config_.echo == config::echo_mode::per_op)
+  {
+    try
+    {
+      conn.sender.send(data.data(), data.size());
+    }
+    catch (std::exception const& e)
+    {
+      std::cerr << "Connection " << conn.receiver.get_socket().native_handle() << ": Echo send failed: " << e.what()
+                << std::endl;
+    }
   }
 
   metrics_.bytes += data.size();

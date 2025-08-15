@@ -6,7 +6,9 @@
 
 namespace rasio
 {
-  acceptor::acceptor(::asio::io_context& io_ctx) : acceptor_{io_ctx} {}
+  acceptor::acceptor(::asio::io_context& io_ctx) : acceptor_{io_ctx}
+  {
+  }
 
   void acceptor::listen(std::string const& address, std::string const& port)
   {
@@ -25,10 +27,10 @@ namespace rasio
 
   void acceptor::do_accept()
   {
-    acceptor_.async_accept(
-      make_custom_alloc_handler(handler_memory_, [this](std::error_code ec, ::asio::ip::tcp::socket sock) {
-        accept_cb_(ec, std::move(sock));
-        if (!ec) { do_accept(); }
-      }));
+    acceptor_.async_accept(make_custom_alloc_handler(handler_memory_, [this](std::error_code ec, socket sock) {
+      accept_cb_(ec, std::move(sock));
+
+      if (!ec) { do_accept(); }
+    }));
   }
 } // namespace rasio

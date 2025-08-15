@@ -21,6 +21,7 @@ add_library(uring_lib
     uring/receiver.cpp
     uring/bundle_receiver.cpp
     uring/bundle_sender.cpp
+    uring/sender.cpp
 )
 
 target_include_directories(uring_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

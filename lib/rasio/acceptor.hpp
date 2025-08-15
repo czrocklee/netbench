@@ -1,6 +1,7 @@
 #pragma once
 
 #include "handler_allocator.hpp"
+#include "socket.hpp"
 
 #include <asio/ip/tcp.hpp>
 #include <asio/io_context.hpp>
@@ -13,7 +14,7 @@ namespace rasio
   class acceptor
   {
   public:
-    using accept_callback = std::function<void(std::error_code, ::asio::ip::tcp::socket)>;
+    using accept_callback = std::function<void(std::error_code, socket)>;
 
     explicit acceptor(::asio::io_context& io_ctx);
 
@@ -24,7 +25,7 @@ namespace rasio
   private:
     void do_accept();
 
-    ::asio::ip::tcp::acceptor acceptor_;
+    ::asio::basic_socket_acceptor<::asio::ip::tcp, ::asio::io_context::executor_type> acceptor_;
     dynamic_handler_memory handler_memory_;
     accept_callback accept_cb_;
   };

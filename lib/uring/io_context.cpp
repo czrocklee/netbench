@@ -1,4 +1,5 @@
 #include "io_context.hpp"
+#include "registered_buffer_pool.hpp"
 
 #include <string.h>
 #include <sys/eventfd.h>
@@ -45,6 +46,7 @@ namespace uring
       throw std::system_error{-ret, std::system_category(), "io_uring_submit failed"};
     }
 
+    ++sub_seq_;
     ::io_uring_cqe* cqes[16];
 
     auto count = ::io_uring_peek_batch_cqe(&ring_, cqes, 16);
@@ -67,7 +69,7 @@ namespace uring
       throw std::system_error{-ret, std::system_category(), "io_uring_submit failed"};
     }
 
-    // Peek the completion queue for any events that are ready.
+    ++sub_seq_;
     ::io_uring_cqe* cqe;
     unsigned head;
     unsigned count = 0;
@@ -81,7 +83,7 @@ namespace uring
     ::io_uring_cq_advance(&ring_, count);
   }
 
-  io_context::fixed_file_handle io_context::create_fixed_file(int fd)
+  io_context::file_handle io_context::create_fixed_file(int fd)
   {
     constexpr static unsigned max_fixed_file_array_size = 1024 * 4;
 
@@ -102,35 +104,105 @@ namespace uring
       io_context& ctx_;
     };
 
-    if (fd < 0) { throw std::invalid_argument("Invalid file descriptor for fixed_file_handle"); }
+    if (fd < 0) { throw std::invalid_argument("Invalid file descriptor for file_handle"); }
 
     if (!fixed_file_table_.has_value()) { fixed_file_table_.emplace<fixed_file_table>(*this); }
 
-    return fixed_file_handle{fd, fd < max_fixed_file_array_size ? this : nullptr};
+    return file_handle{fd, fd < max_fixed_file_array_size ? this : nullptr};
   }
 
-  io_context::request_handle io_context::create_request(handler_type handler, void* context)
+  void io_context::init_buffer_pool(std::uint16_t buf_cnt, std::size_t buf_size)
+  {
+    if (buf_pool_) { throw std::runtime_error("Buffer pool is already initialized"); }
+
+    buf_pool_ = std::make_unique<registered_buffer_pool>(*this, buf_cnt, buf_size);
+  }
+  /*
+    io_context::request_handle io_context::create_request(handler_type handler, void* context)
+    {
+      ::io_uring_sqe* sqe = nullptr;
+
+      while ((sqe = io_uring_get_sqe(&ring_)) == nullptr)
+      {
+        io_uring_submit(&ring_);
+        ++sub_seq_;
+      }
+
+      std::size_t index = (sqe - ring_.sq.sqes);
+      req_data_array_[index] = req_data{.handler = handler, .context = context};
+      ::io_uring_sqe_set_data(sqe, &req_data_array_[index]);
+
+      return request_handle{sqe, &req_data_array_[index]};
+    }
+
+    io_context::request_handle io_context::create_request(file_handle const& file, handler_type handler, void* context)
+    {
+      auto handle = create_request(handler, context);
+      auto& sqe = handle.get_sqe();
+      sqe.fd = file.get_fd();
+
+      if (file.has_fixed()) { sqe.flags |= IOSQE_FIXED_FILE; }
+
+      return handle;
+    } */
+
+  ::io_uring_sqe& io_context::create_request(request_handle& handle, handler_type handler, void* context)
   {
     ::io_uring_sqe* sqe = nullptr;
 
-    while ((sqe = io_uring_get_sqe(&ring_)) == nullptr) { io_uring_submit(&ring_); }
-    
-    std::size_t index = (sqe - ring_.sq.sqes);
-    req_data_array_[index] = req_data{.handler = handler, .context = context};
-    ::io_uring_sqe_set_data(sqe, &req_data_array_[index]);
-    return request_handle{sqe, &req_data_array_[index]};
+    while ((sqe = io_uring_get_sqe(&ring_)) == nullptr)
+    {
+      io_uring_submit(&ring_);
+      ++sub_seq_;
+    }
+
+    if (!handle.is_valid() || handle.io_ctx_ != this)
+    {
+      handle = new_request(handler, context);
+    }
+    else
+    {
+      *handle.data_iter_ = req_data{.handler = handler, .context = context};
+    }
+
+    ::io_uring_sqe_set_data(sqe, std::addressof(*handle.data_iter_));
+
+    return *sqe;
   }
 
-  io_context::request_handle
-  io_context::create_request(fixed_file_handle const& file, handler_type handler, void* context)
+  ::io_uring_sqe&
+  io_context::create_request(request_handle& handle, file_handle const& file, handler_type handler, void* context)
   {
-    auto handle = create_request(handler, context);
-    auto& sqe = handle.get_sqe();
+    auto& sqe = create_request(handle, handler, context);
     sqe.fd = file.get_fd();
 
     if (file.has_fixed()) { sqe.flags |= IOSQE_FIXED_FILE; }
 
-    return handle;
+    return sqe;
+  }
+
+  io_context::request_handle io_context::new_request(handler_type handler, void* context)
+  {
+    data_node_iter iter;
+
+    if (!free_data_list_.empty())
+    {
+      active_data_list_.splice(active_data_list_.begin(), free_data_list_, free_data_list_.begin());
+      iter = active_data_list_.begin();
+      *iter = req_data{.handler = handler, .context = context};
+    }
+    else
+    {
+      iter = active_data_list_.emplace(active_data_list_.begin(), req_data{.handler = handler, .context = context});
+    }
+
+    return request_handle{*this, iter};
+  }
+
+  void io_context::free_request(request_handle& handle)
+  {
+    handle.data_iter_->handler = nullptr;
+    free_data_list_.splice(free_data_list_.begin(), active_data_list_, handle.data_iter_);
   }
 
   void io_context::init(unsigned entries, ::io_uring_params& params)
@@ -181,8 +253,8 @@ namespace uring
 
   void io_context::rearm_wakeup_event()
   {
-    wakeup_handle_ = std::make_unique<request_handle>(create_request(on_wakeup, this));
-    auto& sqe = wakeup_handle_->get_sqe();
+    wakeup_handle_ = std::make_unique<request_handle>();
+    auto& sqe = create_request(*wakeup_handle_, on_wakeup, this);
     ::io_uring_prep_read(&sqe, wakeup_fd_, &wakeup_buffer_, sizeof(wakeup_buffer_), 0);
   }
 
@@ -212,36 +284,43 @@ namespace uring
     if (data->handler != nullptr) { data->handler(*cqe, data->context); }
   }
 
-  io_context::request_handle::request_handle(::io_uring_sqe* sqe, io_context::req_data* data) : sqe_{sqe}, data_{data}
+  io_context::request_handle::request_handle(io_context& io_ctx, data_node_iter data_iter)
+    : io_ctx_{&io_ctx}, data_iter_{data_iter}
   {
-    if (!sqe || !data) { throw std::invalid_argument("Invalid sqe or data for request_handle"); }
   }
 
   io_context::request_handle::~request_handle()
   {
-    if (data_ != nullptr) { data_->handler = nullptr; }
+    if (io_ctx_ != nullptr) { io_ctx_->free_request(*this); }
   }
 
-  io_context::request_handle::request_handle(request_handle&& other) noexcept : sqe_{other.sqe_}, data_{other.data_}
+  io_context::request_handle::request_handle(request_handle&& other) noexcept
+    : io_ctx_{other.io_ctx_}, data_iter_{other.data_iter_}
   {
-    other.sqe_ = nullptr;
-    other.data_ = nullptr;
+    other.io_ctx_ = nullptr;
+    other.data_iter_ = {};
   }
 
   io_context::request_handle& io_context::request_handle::operator=(request_handle&& other) noexcept
   {
     if (this != &other)
     {
-      sqe_ = other.sqe_;
-      data_ = other.data_;
-      other.sqe_ = nullptr;
-      other.data_ = nullptr;
+      if (io_ctx_ != nullptr) { io_ctx_->free_request(*this); }
+
+      io_ctx_ = other.io_ctx_;
+      data_iter_ = other.data_iter_;
+      other.io_ctx_ = nullptr;
+      other.data_iter_ = {};
     }
 
     return *this;
   }
 
-  io_context::fixed_file_handle::fixed_file_handle(int fd, io_context* io_ctx) : fd_{fd}, io_ctx_{io_ctx}
+  io_context::file_handle::file_handle(int fd) : file_handle{fd, nullptr}
+  {
+  }
+
+  io_context::file_handle::file_handle(int fd, io_context* io_ctx) : fd_{fd}, io_ctx_{io_ctx}
   {
     if (fd_ >= 0 && io_ctx_ != nullptr)
     {
@@ -254,7 +333,7 @@ namespace uring
     }
   }
 
-  io_context::fixed_file_handle::~fixed_file_handle()
+  io_context::file_handle::~file_handle()
   {
     if (fd_ >= 0 && io_ctx_ != nullptr)
     {
@@ -263,14 +342,13 @@ namespace uring
     }
   }
 
-  io_context::fixed_file_handle::fixed_file_handle(fixed_file_handle&& other) noexcept
-    : fd_{other.fd_}, io_ctx_{other.io_ctx_}
+  io_context::file_handle::file_handle(file_handle&& other) noexcept : fd_{other.fd_}, io_ctx_{other.io_ctx_}
   {
     other.fd_ = -1;
     other.io_ctx_ = nullptr;
   }
 
-  io_context::fixed_file_handle& io_context::fixed_file_handle::operator=(fixed_file_handle&& other) noexcept
+  io_context::file_handle& io_context::file_handle::operator=(file_handle&& other) noexcept
   {
     if (this != &other)
     {

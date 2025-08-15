@@ -4,9 +4,9 @@ namespace uring
 {
   connector::connector(io_context& io_ctx) : io_ctx_{io_ctx} {}
 
-  bsd::socket connector::connect(std::string const& host, std::string const& port)
+  socket connector::connect(std::string const& host, std::string const& port)
   {
-    auto sock = bsd::socket{AF_INET, SOCK_STREAM, 0};
+    auto sock = socket{AF_INET, SOCK_STREAM, 0};
     sock.connect(host, port);
     return sock;
   }

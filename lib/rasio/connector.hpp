@@ -1,6 +1,6 @@
 #pragma once
 
-#include <asio/ip/tcp.hpp>
+#include "socket.hpp"
 #include <asio/io_context.hpp>
 
 #include <string>
@@ -12,7 +12,7 @@ namespace rasio
   public:
     explicit connector(::asio::io_context& io_ctx);
 
-    ::asio::ip::tcp::socket connect(std::string const& host, std::string const& port);
+    socket connect(std::string const& host, std::string const& port);
 
   private:
     ::asio::io_context& io_ctx_;

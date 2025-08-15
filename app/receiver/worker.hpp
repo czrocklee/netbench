@@ -67,7 +67,10 @@ private:
     }
 
     net::receiver receiver;
-#ifdef BSD_API
+
+#ifdef IO_URING_API
+    net::sender sender{receiver.get_io_context(), receiver.get_io_context().get_buffer_pool()};
+#else
     net::sender sender{receiver.get_io_context()};
 #endif
     std::size_t msg_size;
@@ -86,7 +89,7 @@ private:
   std::atomic<bool> stop_flag_{false};
   net::io_context io_ctx_;
 #ifdef IO_URING_API
-  uring::provided_buffer_pool buffer_pool_;
+  uring::provided_buffer_pool recv_pool_;
 #endif
   utility::metric metrics_{};
   std::list<connection> connections_;

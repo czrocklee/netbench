@@ -20,10 +20,13 @@ namespace bsd
   void buffered_sender::send(void const* data, size_t size)
   {
     std::size_t bytes_sent = 0;
+    bool is_empty = write_list_.empty();
 
-    if (write_list_.empty())
+    if (is_empty)
     {
-      if (bytes_sent = get_socket().send(data, size, MSG_DONTWAIT | MSG_NOSIGNAL); bytes_sent == size) return;
+      bytes_sent = get_socket().send(data, size, MSG_DONTWAIT | MSG_NOSIGNAL);
+
+      if (bytes_sent == size) return;
     }
 
     auto bytes_remain = size - bytes_sent;
@@ -34,12 +37,11 @@ namespace bsd
     }
 
     auto const* data_ptr = static_cast<std::byte const*>(data);
-    bool was_empty = write_list_.empty();
     write_list_.insert(write_list_.end(), data_ptr + bytes_sent, data_ptr + size);
-    std::cout << "buffered_sender: added " << bytes_remain << " bytes to the buffer, total size now: "
-              << write_list_.size() << std::endl;
+    std::cout << "buffered_sender: added " << bytes_remain
+              << " bytes to the buffer, total size now: " << write_list_.size() << std::endl;
 
-    if (was_empty)
+    if (is_empty)
     {
       write_event_ = io_ctx_.register_event(get_socket().get_fd(), EPOLLOUT, &buffered_sender::on_events, this);
     }

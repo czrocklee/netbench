@@ -1,8 +1,7 @@
 #pragma once
 
 #include "handler_allocator.hpp"
-
-#include <asio.hpp>
+#include "socket.hpp"
 #include <asio/error.hpp>
 #include <asio/buffer.hpp>
 #include <functional>
@@ -22,7 +21,7 @@ namespace rasio
       buffer_.resize(buffer_size);
     }
 
-    void open(::asio::ip::tcp::socket sock)
+    void open(socket sock)
     {
       auto protocol = sock.local_endpoint().protocol();
       sock_.assign(protocol, sock.release());
@@ -34,7 +33,9 @@ namespace rasio
       do_read();
     }
 
-    auto& get_socket() noexcept { return sock_; }
+    ::asio::io_context& get_io_context() noexcept { return sock_.get_executor().context(); }
+
+    socket& get_socket() noexcept { return sock_; }
 
   private:
     void do_read()
@@ -47,7 +48,7 @@ namespace rasio
         }));
     }
 
-    ::asio::ip::tcp::socket sock_;
+    socket sock_;
     dynamic_handler_memory handler_memory_;
     std::vector<char> buffer_;
     data_callback data_cb_;

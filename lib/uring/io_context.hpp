@@ -1,13 +1,18 @@
 #pragma once
 
+#include <utility/tagged_integer.hpp>
+
 #include <liburing.h>
 #include <cstdint>
 #include <chrono>
 #include <type_traits>
 #include <any>
+#include <list>
 
 namespace uring
 {
+  class registered_buffer_pool;
+
   class io_context
   {
   public:
@@ -24,15 +29,22 @@ namespace uring
     void run_for(std::chrono::duration<Rep, Period> const& timeout);
     void wakeup();
 
-    ::io_uring& get_ring() noexcept { return ring_; }
+    [[nodiscard]] ::io_uring& get_ring() noexcept { return ring_; }
 
-    class fixed_file_handle;
-    fixed_file_handle create_fixed_file(int fd);
+    using submit_sequence = utility::tagged_integer<std::uint64_t, struct submit_sequence_tag, 0>;
+    [[nodiscard]] submit_sequence get_submit_sequence() const noexcept { return sub_seq_; }
+
+    class file_handle;
+    [[nodiscard]] file_handle create_fixed_file(int fd);
+
+    void init_buffer_pool(std::uint16_t buf_cnt, std::size_t buf_size);
+    [[nodiscard]] registered_buffer_pool& get_buffer_pool() noexcept { return *buf_pool_; }
 
     class request_handle;
     using handler_type = void (*)(::io_uring_cqe const&, void* context);
-    request_handle create_request(handler_type handler, void* context);
-    request_handle create_request(fixed_file_handle const& file, handler_type handler, void* context);
+    ::io_uring_sqe& create_request(request_handle& handle, handler_type handler, void* context);
+    ::io_uring_sqe&
+    create_request(request_handle& handle, file_handle const& file, handler_type handler, void* context);
 
   private:
     void init(unsigned entries, ::io_uring_params& params);
@@ -40,6 +52,8 @@ namespace uring
     void rearm_wakeup_event();
     void run_for_impl(__kernel_timespec const* ts);
     void process_cqe(::io_uring_cqe* cqe);
+    request_handle new_request(handler_type handler, void* context);
+    void free_request(request_handle& handle);
 
     struct req_data
     {
@@ -48,12 +62,21 @@ namespace uring
     };
 
     ::io_uring ring_;
+    submit_sequence sub_seq_;
+    std::unique_ptr<req_data[]> req_data_array_;
+
+    using data_node_iter = std::list<req_data>::iterator;
+    std::list<req_data> free_data_list_;
+    std::list<req_data> active_data_list_;
+
     int wakeup_fd_ = -1;
     std::uint64_t wakeup_buffer_;
     std::unique_ptr<request_handle> wakeup_handle_;
-    std::unique_ptr<req_data[]> req_data_array_;
-    std::any fixed_file_table_;
 
+    std::any fixed_file_table_;
+    std::unique_ptr<registered_buffer_pool> buf_pool_;
+
+    friend class request_handle;
     friend class connection;
     friend class acceptor;
     friend class provided_buffer_pool;
@@ -80,30 +103,32 @@ namespace uring
     request_handle(request_handle&& other) noexcept;
     request_handle& operator=(request_handle&& other) noexcept;
 
-    ::io_uring_sqe& get_sqe() noexcept { return *sqe_; }
+    bool is_valid() const noexcept { return io_ctx_ != nullptr; }
 
   private:
-    request_handle(::io_uring_sqe* sqe, io_context::req_data* data);
-    ::io_uring_sqe* sqe_ = nullptr;
-    io_context::req_data* data_ = nullptr;
+    request_handle(io_context& io_ctx, data_node_iter data_iter);
+    io_context* io_ctx_ = nullptr;
+    io_context::data_node_iter data_iter_;
     friend class io_context;
   };
 
-  class io_context::fixed_file_handle
+  class io_context::file_handle
   {
   public:
-    fixed_file_handle() = default;
-    ~fixed_file_handle();
-    fixed_file_handle(fixed_file_handle const&) = delete;
-    fixed_file_handle& operator=(fixed_file_handle const&) = delete;
-    fixed_file_handle(fixed_file_handle&& other) noexcept;
-    fixed_file_handle& operator=(fixed_file_handle&& other) noexcept;
+    file_handle() = default;
+    explicit file_handle(int fd);
+    ~file_handle();
+    file_handle(file_handle const&) = delete;
+    file_handle& operator=(file_handle const&) = delete;
+    file_handle(file_handle&& other) noexcept;
+    file_handle& operator=(file_handle&& other) noexcept;
 
     int get_fd() const noexcept { return fd_; }
+    bool is_valid() const noexcept { return fd_ != -1; }
     bool has_fixed() const noexcept { return io_ctx_ != nullptr; }
 
   private:
-    fixed_file_handle(int fd, io_context* io_ctx);
+    file_handle(int fd, io_context* io_ctx);
     int fd_ = -1;
     io_context* io_ctx_ = nullptr;
     friend class io_context;

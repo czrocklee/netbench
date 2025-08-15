@@ -17,7 +17,7 @@ namespace uring
 
   }
 
-  void bundle_receiver::open(bsd::socket sock)
+  void bundle_receiver::open(socket sock)
   {
     sock_ = std::move(sock);
   }
@@ -88,9 +88,8 @@ namespace uring
 
   void bundle_receiver::new_bundle_recv_op()
   {
-    recv_handle_ = io_ctx_.create_request(on_bundle_recv, this);
-    auto& sqe = recv_handle_.get_sqe();
-    io_uring_prep_recv_multishot(&sqe, sock_.get_fd(), NULL, 0, 0);
+    auto& sqe = io_ctx_.create_request(recv_handle_, sock_.get_file_handle(), on_bundle_recv, this);
+    io_uring_prep_recv_multishot(&sqe, sock_.get_file_handle().get_fd(), NULL, 0, 0);
     sqe.flags |= IOSQE_BUFFER_SELECT;
     sqe.flags |= IOSQE_FIXED_FILE;
 

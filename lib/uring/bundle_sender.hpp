@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../bsd/socket.hpp"
+#include "socket.hpp"
 #include "provided_buffer_pool.hpp"
 #include "registered_buffer_pool.hpp"
 #include <utility/ref_or_own.hpp>
@@ -17,7 +17,7 @@ namespace uring
   public:
     using buffer_id_type = provided_buffer_pool::buffer_id_type;
     using buffer_group_id_type = provided_buffer_pool::group_id_type;
-    using socket_type = utility::ref_or_own<bsd::socket>;
+    using socket_type = utility::ref_or_own<socket>;
 
     bundle_sender(
       io_context& io_ctx,
@@ -33,10 +33,8 @@ namespace uring
     void enable_fixed_buffer_fastpath(registered_buffer_pool& reg_buf_pool);
 
     [[nodiscard]] bool is_buffer_full() const noexcept { return is_buffer_full_; }
-
     [[nodiscard]] provided_buffer_pool& get_buffer_pool() noexcept { return buf_pool_; }
-
-    [[nodiscard]] bsd::socket& get_socket() noexcept { return sock_.get(); }
+    [[nodiscard]] socket& get_socket() noexcept { return sock_.get(); }
 
   private:
     static void on_fixed_buffer_send_completion(::io_uring_cqe const& cqe, void* context);

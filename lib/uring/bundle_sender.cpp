@@ -94,12 +94,13 @@ namespace uring
   void bundle_sender::send_fastpath()
   {
     state_ = state::fastpath;
-    fixed_buf_data_->send_handle = io_ctx_.create_request(on_fixed_buffer_send_completion, this);
-    auto& sqe = fixed_buf_data_->send_handle.get_sqe();
+
+    auto& sqe = io_ctx_.create_request(
+      fixed_buf_data_->send_handle, get_socket().get_file_handle(), on_fixed_buffer_send_completion, this);
     sqe.ioprio |= IORING_SEND_ZC_REPORT_USAGE;
     ::io_uring_prep_send_zc_fixed(
       &sqe,
-      get_socket().get_fd(),
+      get_socket().get_file_handle().get_fd(),
       fixed_buf_data_->buf.data(),
       fixed_buf_data_->buf.size(),
       MSG_WAITALL,
@@ -158,11 +159,12 @@ namespace uring
       if (bytes < cur_buf.size())
       {
         state_ = state::retrying;
-        send_handle_ = io_ctx_.create_request(on_retry_send_completion, this);
-        auto& sqe = send_handle_.get_sqe();
+        auto& sqe =
+          io_ctx_.create_request(send_handle_, get_socket().get_file_handle(), on_retry_send_completion, this);
+
         ::io_uring_prep_send(
           &sqe,
-          get_socket().get_fd(),
+          get_socket().get_file_handle().get_fd(),
           static_cast<std::byte const*>(cur_buf.data()) + bytes,
           cur_buf.size() - bytes,
           0);
@@ -185,9 +187,8 @@ namespace uring
     // std::cout << "starting bundle send operation " << buf_id_head_.value() << " " << buf_id_tail_.value() <<
     // std::endl;
     state_ = state::sending;
-    send_handle_ = io_ctx_.create_request(on_bundle_send_completion, this);
-    auto& sqe = send_handle_.get_sqe();
-    ::io_uring_prep_send_bundle(&sqe, get_socket().get_fd(), 0, 0);
+    auto& sqe = io_ctx_.create_request(send_handle_, get_socket().get_file_handle(), on_bundle_send_completion, this);
+    ::io_uring_prep_send_bundle(&sqe, get_socket().get_file_handle().get_fd(), 0, 0);
     sqe.buf_group = buf_pool_.get_group_id();
     sqe.flags |= IOSQE_BUFFER_SELECT;
   }

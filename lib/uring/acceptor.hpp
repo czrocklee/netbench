@@ -1,6 +1,6 @@
 #pragma once
 
-#include "bsd/socket.hpp"
+#include "socket.hpp"
 #include "io_context.hpp"
 
 #include <functional>
@@ -12,7 +12,7 @@ namespace uring
   class acceptor
   {
   public:
-    using accept_callback = std::move_only_function<void(std::error_code, bsd::socket)>;
+    using accept_callback = std::move_only_function<void(std::error_code, socket)>;
 
     explicit acceptor(io_context& io_ctx);
 
@@ -25,7 +25,7 @@ namespace uring
     void new_multishot_accept_op();
 
     io_context& io_ctx_;
-    bsd::socket listen_sock_;
+    socket listen_sock_;
     accept_callback accept_cb_;
     io_context::request_handle accept_handle_;
   };

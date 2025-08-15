@@ -1,20 +1,21 @@
 #include "receiver.hpp"
+
 #include <asio/error.hpp>
 #include <asio/buffer.hpp>
+
 #include <utility>
 #include <system_error>
+#include <iostream>
 
 namespace uring
 {
-  receiver::receiver(io_context& io_ctx, provided_buffer_pool& buffer_pool)
-    : io_ctx_{io_ctx}, buffer_pool_{buffer_pool}
+  receiver::receiver(io_context& io_ctx, provided_buffer_pool& buffer_pool) : io_ctx_{io_ctx}, buffer_pool_{buffer_pool}
   {
   }
 
-  void receiver::open(bsd::socket sock)
+  void receiver::open(socket sock)
   {
     sock_ = std::move(sock);
-    file_handle_ = io_ctx_.create_fixed_file(sock_.get_fd());
   }
 
   void receiver::start(data_callback cb)
@@ -56,11 +57,11 @@ namespace uring
 
   void receiver::new_multishot_recv_op()
   {
-    recv_handle_ = io_ctx_.create_request(file_handle_, on_multishot_recv, this);
-    auto& sqe = recv_handle_.get_sqe();
+    auto& sqe = io_ctx_.create_request(recv_handle_, sock_.get_file_handle(), on_multishot_recv, this);
+    ::io_uring_prep_recv_multishot(&sqe, sock_.get_file_handle().get_fd(), nullptr, 0, 0);
     sqe.flags |= IOSQE_BUFFER_SELECT;
     sqe.buf_group = buffer_pool_.get_group_id();
-    ::io_uring_prep_recv_multishot(&sqe, sock_.get_fd(), nullptr, 0, 0);
+    std::cout << "Created recv operation: " << sqe.user_data << std::endl;
   }
 
 } // namespace uring

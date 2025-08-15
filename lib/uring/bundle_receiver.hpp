@@ -1,6 +1,6 @@
 #pragma once
 
-#include "bsd/socket.hpp"
+#include "socket.hpp"
 #include "io_context.hpp"
 #include "provided_buffer_pool.hpp"
 
@@ -22,12 +22,11 @@ namespace uring
 
     ~bundle_receiver();
 
-    void open(bsd::socket sock);
+    void open(socket sock);
 
     void start(data_callback cb);
 
-    bsd::socket& get_socket() noexcept { return sock_; }
-
+    socket& get_socket() noexcept { return sock_; }
     io_context& get_io_context() noexcept { return io_ctx_; }
 
   private:
@@ -35,7 +34,7 @@ namespace uring
     void new_bundle_recv_op();
 
     io_context& io_ctx_;
-    bsd::socket sock_;
+    socket sock_;
     provided_buffer_pool& buffer_pool_;
     io_context::request_handle recv_handle_;
     data_callback data_cb_;

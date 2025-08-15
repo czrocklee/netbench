@@ -79,7 +79,12 @@
     "liburing.h": "c",
     "forward_list": "cpp",
     "unordered_set": "cpp",
-    "cassert": "cpp"
+    "cassert": "cpp",
+    "executor": "cpp",
+    "io_context": "cpp",
+    "netfwd": "cpp",
+    "buffer": "cpp",
+    "socket": "cpp"
   }
 
 
