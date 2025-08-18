@@ -63,7 +63,6 @@ namespace uring
 
     ::io_uring ring_;
     submit_sequence sub_seq_;
-    std::unique_ptr<req_data[]> req_data_array_;
 
     using data_node_iter = std::list<req_data>::iterator;
     std::list<req_data> free_data_list_;

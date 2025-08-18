@@ -22,7 +22,7 @@ worker::worker(config cfg)
 #ifdef IO_URING_API
   recv_pool_.populate_buffers();
 
-  if (config_.echo != config::echo_mode::none) { io_ctx_.init_buffer_pool(config_.buffer_count, 4096); }
+  if (config_.echo != config::echo_mode::none) { io_ctx_.init_buffer_pool(config_.buffer_count, 1024 * 1024 * 4); }
 
 #endif
 }

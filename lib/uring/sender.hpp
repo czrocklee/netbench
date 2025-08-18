@@ -18,7 +18,7 @@ namespace uring
     using buffer_index_type = registered_buffer_pool::buffer_index_type;
     using socket_type = utility::ref_or_own<socket>;
 
-    sender(io_context& io_ctx, registered_buffer_pool& buf_pool, std::size_t max_writelist_entries = 1024 * 4);
+    sender(io_context& io_ctx, registered_buffer_pool& buf_pool);
 
     void open(socket_type sock);
     template<typename F>
@@ -30,7 +30,7 @@ namespace uring
   private:
     static void on_send_completion(::io_uring_cqe const& cqe, void* context);
 
-    void start_send_operation(void const* data, std::size_t size, buffer_index_type buf_index);
+    void start_send_operation();
 
     io_context& io_ctx_;
     socket_type sock_;
@@ -40,81 +40,60 @@ namespace uring
     struct buffer_data
     {
       buffer_index_type index;
-      std::size_t size;
+      std::size_t offset = 0;
+      std::size_t size = 0;
     };
 
-    buffer_data head_buf_;
+    std::optional<buffer_data> active_buf_;
+    std::optional<buffer_data> pending_buf_;
     io_context::submit_sequence last_sub_seq_;
     ::io_uring_sqe* last_send_sqe_ = nullptr;
-    boost::circular_buffer<buffer_data> write_list_;
-    boost::circular_buffer<buffer_index_type> pending_zc_notif_;
-
-    enum class state
-    {
-      idle,
-      zc_sending,
-      zc_confirmed,
-      retrying
-    };
-
-    state state_ = state::idle;
   };
 
   template<typename F>
   void sender::send(std::size_t size, F&& f)
   {
-    auto const acquire_new_buf = [&](buffer_data& buf_data) {
-      buf_data.index = buf_pool_.acquire_buffer();
-      auto buf = buf_pool_.get_buffer(buf_data.index);
-      buf_data.size = std::invoke(std::forward<F>(f), buf.data(), buf.size());
-      //std::cout << "buffer acquired " << buf_data.index << std::endl;  
-      return buf;
-    };
-
-    if (state_ == state::idle)
+    if (!active_buf_)
     {
-      auto const buf = acquire_new_buf(head_buf_);
-      start_send_operation(buf.data(), head_buf_.size, head_buf_.index);
+      active_buf_.emplace().index = buf_pool_.acquire_buffer();
+      auto buf = buf_pool_.get_buffer(active_buf_->index);
+      active_buf_->size = std::invoke(std::forward<F>(f), buf.data(), buf.size());
+      start_send_operation();
       return;
     }
 
-    auto const append_to_buf = [&](buffer_data& buf_data) {
-      auto buf = buf_pool_.get_buffer(buf_data.index);
-      buf += buf_data.size;
-      buf_data.size += std::invoke(std::forward<F>(f), buf.data(), buf.size());
-    };
-
-    if (write_list_.empty())
+    if (pending_buf_)
     {
-      if (last_sub_seq_ == io_ctx_.get_submit_sequence())
-      {
-        if (auto const head_space = buf_pool_.get_buffer_size() - head_buf_.size; head_space >= size)
-        {
-          append_to_buf(head_buf_);
-          last_send_sqe_->len = head_buf_.size; // update the send length
-          //std::cout << "update length to " << last_send_sqe_->len << std::endl;
+      auto buf = buf_pool_.get_buffer(pending_buf_->index);
+      buf += (pending_buf_->offset + pending_buf_->size);
 
-          return;
-        }
+      if (buf.size() < size)
+      {
+        std::terminate();
+        throw std::runtime_error("sender: insufficient buffer space");
       }
 
-      write_list_.push_back();
-      acquire_new_buf(write_list_.back());
-
-      std::cout << "write_list started to be built " << write_list_.size() << std::endl;
+      pending_buf_->size += std::invoke(std::forward<F>(f), buf.data(), buf.size());
       return;
     }
 
-    if (auto const tail_space = buf_pool_.get_buffer_size() - write_list_.back().size; tail_space >= size)
+    auto buf = buf_pool_.get_buffer(active_buf_->index);
+    buf += (active_buf_->offset + active_buf_->size);
+
+    if (buf.size() >= size)
     {
-      append_to_buf(write_list_.back());
+      active_buf_->size += std::invoke(std::forward<F>(f), buf.data(), buf.size());
+
+      if (last_sub_seq_ == io_ctx_.get_submit_sequence())
+      {
+        last_send_sqe_->len = active_buf_->size; // update the send length
+      }
+
       return;
     }
 
-    if (write_list_.full()) { throw std::runtime_error("sender: write list is full"); }
-
-    write_list_.push_back();
-    acquire_new_buf(write_list_.back());
-    std::cout << "write_list keep building " << write_list_.size() << std::endl;
+    pending_buf_.emplace().index = buf_pool_.acquire_buffer();
+    buf = buf_pool_.get_buffer(pending_buf_->index);
+    pending_buf_->size = std::invoke(std::forward<F>(f), buf.data(), buf.size());
   }
 }

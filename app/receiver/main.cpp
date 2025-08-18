@@ -28,7 +28,7 @@ int main(int argc, char** argv)
   CLI::App app{"C++ TCP receiver"};
 
   std::string address_str;
-  app.add_option("-a,--address", address_str, "Target address in host:port format")->default_val("0.0.0.0:8080");
+  app.add_option("-a,--address", address_str, "Target address in host:port format")->default_val("0.0.0.0:9004");
 
   worker::config cfg;
 
@@ -87,7 +87,7 @@ int main(int argc, char** argv)
 #ifdef IO_URING_API
       io_uring_params params{};
       params.cq_entries = 16384;
-      //params.flags |= IORING_SETUP_CQSIZE;
+      // params.flags |= IORING_SETUP_CQSIZE;
       params.flags |= IORING_SETUP_R_DISABLED;
       params.flags |= IORING_SETUP_SINGLE_ISSUER;
       params.flags |= IORING_SETUP_DEFER_TASKRUN;

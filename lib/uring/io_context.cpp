@@ -80,7 +80,7 @@ namespace uring
       ++count;
     }
 
-    std::cout << "cqe count this round " << count << std::endl;
+    //std::cout << "cqe count this round " << count << std::endl;
     ::io_uring_cq_advance(&ring_, count);
   }
 
@@ -118,34 +118,6 @@ namespace uring
 
     buf_pool_ = std::make_unique<registered_buffer_pool>(*this, buf_cnt, buf_size);
   }
-  /*
-    io_context::request_handle io_context::create_request(handler_type handler, void* context)
-    {
-      ::io_uring_sqe* sqe = nullptr;
-
-      while ((sqe = io_uring_get_sqe(&ring_)) == nullptr)
-      {
-        io_uring_submit(&ring_);
-        ++sub_seq_;
-      }
-
-      std::size_t index = (sqe - ring_.sq.sqes);
-      req_data_array_[index] = req_data{.handler = handler, .context = context};
-      ::io_uring_sqe_set_data(sqe, &req_data_array_[index]);
-
-      return request_handle{sqe, &req_data_array_[index]};
-    }
-
-    io_context::request_handle io_context::create_request(file_handle const& file, handler_type handler, void* context)
-    {
-      auto handle = create_request(handler, context);
-      auto& sqe = handle.get_sqe();
-      sqe.fd = file.get_fd();
-
-      if (file.has_fixed()) { sqe.flags |= IOSQE_FIXED_FILE; }
-
-      return handle;
-    } */
 
   ::io_uring_sqe& io_context::create_request(request_handle& handle, handler_type handler, void* context)
   {
@@ -157,14 +129,8 @@ namespace uring
       ++sub_seq_;
     }
 
-    if (!handle.is_valid() || handle.io_ctx_ != this)
-    {
-      handle = new_request(handler, context);
-    }
-    else
-    {
-      *handle.data_iter_ = req_data{.handler = handler, .context = context};
-    }
+    if (!handle.is_valid() || handle.io_ctx_ != this) { handle = new_request(handler, context); }
+    else { *handle.data_iter_ = req_data{.handler = handler, .context = context}; }
 
     ::io_uring_sqe_set_data(sqe, std::addressof(*handle.data_iter_));
 
@@ -212,8 +178,6 @@ namespace uring
     {
       throw std::system_error{-ret, std::system_category(), "io_uring_queue_init_params failed"};
     }
-
-    req_data_array_ = std::make_unique<req_data[]>(params.sq_entries);
 
     if (wakeup_fd_ = ::eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK); wakeup_fd_ < 0)
     {
