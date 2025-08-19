@@ -185,6 +185,12 @@ tracepoint:io_uring:io_uring_complete
 	// delete(@submit_time[tid, args->user_data]);
 }
 
+tracepoint:syscalls:sys_enter_io_uring_enter
+/comm == str($1)/
+{
+	printf("\n");
+}
+
 
 // --- Cleanup on exit ---
 END

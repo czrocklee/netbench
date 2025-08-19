@@ -8,7 +8,7 @@ namespace uring
 {
   registered_buffer_pool::registered_buffer_pool(io_context& io_ctx, std::uint16_t buf_cnt, std::size_t buf_size)
     : ring_{io_ctx.get_ring()},
-      pool_memory_{static_cast<std::byte*>(std::aligned_alloc(buf_size, buf_cnt * buf_size)), std::free},
+      pool_memory_{static_cast<std::byte*>(std::aligned_alloc(4096, buf_cnt * buf_size)), std::free},
       buf_cnt_{buf_cnt},
       buf_size_{buf_size}
   {

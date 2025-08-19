@@ -22,7 +22,7 @@ worker::worker(config cfg)
 #ifdef IO_URING_API
   recv_pool_.populate_buffers();
 
-  if (config_.echo != config::echo_mode::none) { io_ctx_.init_buffer_pool(config_.buffer_count, 1024 * 1024 * 4); }
+  if (config_.echo != config::echo_mode::none) { io_ctx_.init_buffer_pool(config_.buffer_count, 1024 * 1024 * 2); }
 
 #endif
 }
@@ -125,6 +125,7 @@ void worker::on_data(connection& conn, ::asio::const_buffer const data)
 
   if (conn.partial_buffer_size > 0)
   {
+    //std::cout << "partial buffer not empty, size: " << conn.partial_buffer_size << " data_left: " << data_left.size() << std::endl;
     auto addr = reinterpret_cast<std::byte const*>(data_left.data());
     auto size = std::min(conn.msg_size - conn.partial_buffer_size, data_left.size());
     std::memcpy(conn.partial_buffer.get() + conn.partial_buffer_size, addr, size);
@@ -145,6 +146,7 @@ void worker::on_data(connection& conn, ::asio::const_buffer const data)
 
     if (data_left.size() < conn.msg_size)
     {
+      //std::cout << "remaining bytes: " << data_left.size() << std::endl;
       std::memcpy(conn.partial_buffer.get(), addr, data_left.size());
       conn.partial_buffer_size = data_left.size();
       break;

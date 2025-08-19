@@ -44,6 +44,7 @@ namespace uring
       std::size_t size = 0;
     };
 
+    int send_error_ = 0;
     std::optional<buffer_data> active_buf_;
     std::optional<buffer_data> pending_buf_;
     io_context::submit_sequence last_sub_seq_;
@@ -53,6 +54,11 @@ namespace uring
   template<typename F>
   void sender::send(std::size_t size, F&& f)
   {
+    if (send_error_ > 0)
+    {
+      throw std::runtime_error("send failed: " + std::string(strerror(send_error_)));
+    }
+
     if (!active_buf_)
     {
       active_buf_.emplace().index = buf_pool_.acquire_buffer();
@@ -66,10 +72,10 @@ namespace uring
     {
       auto buf = buf_pool_.get_buffer(pending_buf_->index);
       buf += (pending_buf_->offset + pending_buf_->size);
-
+      //std::cout << "active buffer size: " << active_buf_->size << " pending buffer size: " << pending_buf_->size << std::endl;
       if (buf.size() < size)
       {
-        std::terminate();
+        //std::terminate();
         throw std::runtime_error("sender: insufficient buffer space");
       }
 
