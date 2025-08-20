@@ -21,8 +21,8 @@ namespace uring
 
     bundle_sender(
       io_context& io_ctx,
-      std::uint16_t max_buf_cnt,
       std::size_t max_buf_size,
+      std::uint16_t max_buf_cnt,
       buffer_group_id_type group_id);
 
     void open(socket_type sock);

@@ -51,5 +51,3 @@ add_executable(bsd_pingpong ${PINGPONG_SOURCES})
 target_compile_definitions(bsd_pingpong PRIVATE BSD_API)
 target_link_libraries(bsd_pingpong PRIVATE bsd_lib utility_lib CLI11::CLI11)
 
-# Syscall overhead tool
-add_executable(syscall_overhead ../tool/syscall_overhead.c)

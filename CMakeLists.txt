@@ -24,3 +24,6 @@ add_subdirectory(lib)
 # find_package(Boost REQUIRED COMPONENTS system)
 # target_link_libraries(asio_client Boost::system)
 # (and similar for other targets that use asio or other libraries)
+
+add_executable(syscall_overhead tool/syscall_overhead.c)
+add_executable(zerocopy_send tool/zerocopy_send.c)

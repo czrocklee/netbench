@@ -8,10 +8,10 @@ namespace uring
 {
   bundle_sender::bundle_sender(
     io_context& io_ctx,
-    std::uint16_t max_buf_cnt,
     std::size_t max_buf_size,
+    std::uint16_t max_buf_cnt,
     buffer_group_id_type group_id)
-    : io_ctx_{io_ctx}, buf_pool_{io_ctx, max_buf_cnt, max_buf_size, group_id}
+    : io_ctx_{io_ctx}, buf_pool_{io_ctx, max_buf_size, max_buf_cnt, group_id}
   {
   }
 

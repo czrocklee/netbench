@@ -37,7 +37,7 @@ namespace uring
     class file_handle;
     [[nodiscard]] file_handle create_fixed_file(int fd);
 
-    void init_buffer_pool(std::uint16_t buf_cnt, std::size_t buf_size);
+    void init_buffer_pool(std::size_t buf_size, std::uint16_t buf_cnt);
     [[nodiscard]] registered_buffer_pool& get_buffer_pool() noexcept { return *buf_pool_; }
 
     class request_handle;

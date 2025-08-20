@@ -84,7 +84,8 @@
     "io_context": "cpp",
     "netfwd": "cpp",
     "buffer": "cpp",
-    "socket": "cpp"
+    "socket": "cpp",
+    "bitset": "cpp"
   }
 
 

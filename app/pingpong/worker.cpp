@@ -8,8 +8,8 @@ worker::worker(config cfg)
   : config_{std::move(cfg)},
 #ifdef IO_URING_API
     io_ctx_{config_.uring_depth, config_.params},
-    buffer_pool_{io_ctx_, config_.buffer_count, config_.buffer_size, uring::provided_buffer_pool::group_id_type{0}},
-    fixed_buffer_pool_{io_ctx_, 1024, 4096},
+    buffer_pool_{io_ctx_, config_.buffer_size, config_.buffer_count, uring::provided_buffer_pool::group_id_type{0}},
+    fixed_buffer_pool_{io_ctx_, 4096, 1024},
 #elifdef ASIO_API
     io_ctx_{1},
 #endif

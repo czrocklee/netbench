@@ -10,8 +10,8 @@ worker::worker(config cfg)
     io_ctx_{config_.uring_depth, config_.params},
     recv_pool_{
       io_ctx_,
-      config_.buffer_count,
       config_.buffer_size,
+      config_.buffer_count,
       uring::provided_buffer_pool::group_id_type{config_.buffer_group_id}},
 #elifdef ASIO_API
     io_ctx_{1},
@@ -22,7 +22,7 @@ worker::worker(config cfg)
 #ifdef IO_URING_API
   recv_pool_.populate_buffers();
 
-  if (config_.echo != config::echo_mode::none) { io_ctx_.init_buffer_pool(config_.buffer_count, 1024 * 1024 * 2); }
+  if (config_.echo != config::echo_mode::none) { io_ctx_.init_buffer_pool(1024 * 1024 * 16, config_.buffer_count); }
 
 #endif
 }
@@ -59,6 +59,8 @@ void worker::add_connection(net::socket sock)
   {
 #ifdef IO_URING_API
     sock.fix_file_handle(io_ctx_);
+    int zc_enable = 1;
+    sock.set_option(SOL_SOCKET, SO_ZEROCOPY, zc_enable);
     auto iter = connections_.emplace(connections_.begin(), io_ctx_, recv_pool_);
 #else
     auto iter = connections_.emplace(connections_.begin(), io_ctx_, config_.buffer_size);
@@ -133,7 +135,7 @@ void worker::on_data(connection& conn, ::asio::const_buffer const data)
 
     if (conn.partial_buffer_size == conn.msg_size)
     {
-      on_new_message(conn.partial_buffer.get());
+      on_new_message(conn, conn.partial_buffer.get());
       conn.partial_buffer_size = 0;
     }
 
@@ -152,7 +154,7 @@ void worker::on_data(connection& conn, ::asio::const_buffer const data)
       break;
     }
 
-    on_new_message(addr);
+    on_new_message(conn, addr);
     data_left += conn.msg_size;
   }
 
@@ -173,13 +175,27 @@ void worker::on_data(connection& conn, ::asio::const_buffer const data)
   ++metrics_.ops;
 }
 
-void worker::on_new_message(void const* buffer)
+void worker::on_new_message(connection& conn,void const* buffer)
 {
   // auto const now = utility::nanos_since_epoch();
   // std::uint64_t send_ts;
   // std::memcpy(&send_ts, buffer, sizeof(send_ts));
   ++metrics_.msgs;
   // metrics_.update_latency_histogram(now - send_ts);
+
+  if (config_.echo == config::echo_mode::per_msg)
+  {
+    try
+    {
+      conn.sender.send(buffer, conn.msg_size);
+    }
+    catch (std::exception const& e)
+    {
+      std::cerr << "Connection " << conn.receiver.get_socket().native_handle() << ": Echo send failed: " << e.what()
+                << std::endl;
+    }
+  }
+
 }
 
 void worker::process_pending_tasks()

@@ -112,11 +112,11 @@ namespace uring
     return file_handle{fd, fd < max_fixed_file_array_size ? this : nullptr};
   }
 
-  void io_context::init_buffer_pool(std::uint16_t buf_cnt, std::size_t buf_size)
+  void io_context::init_buffer_pool(std::size_t buf_size, std::uint16_t buf_cnt)
   {
     if (buf_pool_) { throw std::runtime_error("Buffer pool is already initialized"); }
 
-    buf_pool_ = std::make_unique<registered_buffer_pool>(*this, buf_cnt, buf_size);
+    buf_pool_ = std::make_unique<registered_buffer_pool>(*this, buf_size, buf_cnt);
   }
 
   ::io_uring_sqe& io_context::create_request(request_handle& handle, handler_type handler, void* context)

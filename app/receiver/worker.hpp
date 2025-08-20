@@ -83,7 +83,7 @@ private:
 
   void process_pending_tasks();
   void on_data(connection& conn, ::asio::const_buffer const data);
-  void on_new_message(void const* buffer);
+  void on_new_message(connection& conn, void const* buffer);
 
   config config_;
   std::atomic<bool> stop_flag_{false};

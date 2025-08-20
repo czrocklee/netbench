@@ -21,14 +21,13 @@ namespace uring
 
   void sender::start_send_operation()
   {
-
-    /* std::cout << "starting send operation: active buffer size: " << active_buf_->size << " offset "
-              << active_buf_->offset << std::endl; */
     auto& sqe = io_ctx_.create_request(send_handle_, get_socket().get_file_handle(), on_send_completion, this);
-    sqe.ioprio |= IORING_SEND_ZC_REPORT_USAGE;
+
     auto buf = buf_pool_.get_buffer(active_buf_->index) + active_buf_->offset;
     ::io_uring_prep_send_zc_fixed(
-      &sqe, get_socket().get_file_handle().get_fd(), buf.data(), active_buf_->size, 0, 0, active_buf_->index.value());
+      &sqe, get_socket().get_file_handle().get_fd(), buf.data(), active_buf_->size, MSG_ZEROCOPY, MSG_ZEROCOPY, active_buf_->index.value());
+    sqe.ioprio |= IORING_SEND_ZC_REPORT_USAGE;
+
     //::io_uring_prep_write_fixed(
     //&sqe, get_socket().get_file_handle().get_fd(), buf.data(), active_buf_->size, 0, active_buf_->index.value());
 
@@ -44,6 +43,8 @@ namespace uring
     {
       /* std::cout << "notify received active buffer size: " << self.active_buf_->size
                 << " pending buffer size: " << (self.pending_buf_ ? self.pending_buf_->size : 0) << std::endl; */
+                
+      //std::cout << cqe.res << " flag" << std::endl;
 
       if (self.send_error_ > 0)
       {
@@ -83,8 +84,6 @@ namespace uring
       std::cerr << "send failed: " << strerror(self.send_error_) << std::endl;
       return;
     }
-
-    // if (cqe.res > 32) std::cout << "completion: " << cqe.res << std::endl;
 
     auto const bytes_sent = static_cast<std::size_t>(cqe.res);
     self.active_buf_->offset += bytes_sent;
