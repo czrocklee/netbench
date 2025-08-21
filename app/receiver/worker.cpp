@@ -2,6 +2,7 @@
 #include "../common/metadata.hpp"
 #include "utility/time.hpp"
 
+#include <magic_enum/magic_enum.hpp>
 #include <iostream>
 
 worker::worker(config cfg)
@@ -22,7 +23,7 @@ worker::worker(config cfg)
 #ifdef IO_URING_API
   recv_pool_.populate_buffers();
 
-  if (config_.echo != config::echo_mode::none) { io_ctx_.init_buffer_pool(1024 * 1024 * 16, config_.buffer_count); }
+  if (config_.echo != config::echo_mode::none) { io_ctx_.init_buffer_pool(1024 * 1024 * 8, 128); }
 
 #endif
 }
@@ -59,8 +60,6 @@ void worker::add_connection(net::socket sock)
   {
 #ifdef IO_URING_API
     sock.fix_file_handle(io_ctx_);
-    int zc_enable = 1;
-    sock.set_option(SOL_SOCKET, SO_ZEROCOPY, zc_enable);
     auto iter = connections_.emplace(connections_.begin(), io_ctx_, recv_pool_);
 #else
     auto iter = connections_.emplace(connections_.begin(), io_ctx_, config_.buffer_size);
@@ -82,7 +81,19 @@ void worker::add_connection(net::socket sock)
     iter->partial_buffer = std::make_unique<std::byte[]>(iter->msg_size);
     iter->receiver.open(std::move(sock));
 
-    if (config_.echo != config::echo_mode::none) { iter->sender.open(iter->receiver.get_socket()); }
+    if (config_.echo != config::echo_mode::none) 
+    { 
+#ifdef IO_URING_API
+      using namespace magic_enum::bitwise_operators;
+      net::sender::flags f{};
+      
+      if (config_.zerocopy) { f |= net::sender::flags::zerocopy; }
+      
+      iter->sender.open(iter->receiver.get_socket(), f);
+#else
+      iter->sender.open(iter->receiver.get_socket()); 
+#endif
+    }
 
     iter->receiver.start([this, iter](std::error_code ec, auto&& data) {
       if (ec)

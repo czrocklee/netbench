@@ -37,6 +37,7 @@ public:
     echo_mode echo = echo_mode::none;
     std::size_t buffer_size;
 #ifdef IO_URING_API
+    bool zerocopy;
     std::uint32_t uring_depth;
     std::uint16_t buffer_count;
     std::uint16_t buffer_group_id;

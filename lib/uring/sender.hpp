@@ -20,7 +20,8 @@ namespace uring
 
     sender(io_context& io_ctx, registered_buffer_pool& buf_pool);
 
-    void open(socket_type sock);
+    enum flags : int { zerocopy = 1 << 0 };
+    void open(socket_type sock, flags f = static_cast<flags>(0));
     template<typename F>
     void send(std::size_t size, F&& f);
     void send(void const* data, std::size_t size);
@@ -30,6 +31,7 @@ namespace uring
   private:
     void start_send_operation();
     static void on_send_completion(::io_uring_cqe const& cqe, void* context);
+    static void on_zc_send_completion(::io_uring_cqe const& cqe, void* context);
     void on_zf_notify();
 
     io_context& io_ctx_;
@@ -45,6 +47,7 @@ namespace uring
       std::size_t pending_zf_notify = 0;
     };
 
+    flags flags_;
     int send_error_ = 0;
     bool sending_ = false;
     std::optional<buffer_data> active_buf_;
