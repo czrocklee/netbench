@@ -28,9 +28,9 @@ namespace uring
     [[nodiscard]] socket& get_socket() noexcept { return sock_.get(); }
 
   private:
-    static void on_send_completion(::io_uring_cqe const& cqe, void* context);
-
     void start_send_operation();
+    static void on_send_completion(::io_uring_cqe const& cqe, void* context);
+    void on_zf_notify();
 
     io_context& io_ctx_;
     socket_type sock_;
@@ -42,9 +42,11 @@ namespace uring
       buffer_index_type index;
       std::size_t offset = 0;
       std::size_t size = 0;
+      std::size_t pending_zf_notify = 0;
     };
 
     int send_error_ = 0;
+    bool sending_ = false;
     std::optional<buffer_data> active_buf_;
     std::optional<buffer_data> pending_buf_;
     io_context::submit_sequence last_sub_seq_;
@@ -54,6 +56,8 @@ namespace uring
   template<typename F>
   void sender::send(std::size_t size, F&& f)
   {
+    //std::cout << "send requested: " << size << " bytes, is_sending: " << sending_ << std::endl;
+
     if (send_error_ > 0)
     {
       throw std::runtime_error("send failed: " + std::string(strerror(send_error_)));
@@ -75,7 +79,7 @@ namespace uring
       //std::cout << "active buffer size: " << active_buf_->size << " pending buffer size: " << pending_buf_->size << std::endl;
       if (buf.size() < size)
       {
-        //std::terminate();
+        std::terminate();
         throw std::runtime_error("sender: insufficient buffer space");
       }
 
@@ -92,11 +96,22 @@ namespace uring
 
       if (last_sub_seq_ == io_ctx_.get_submit_sequence())
       {
+        //std::cout << "Updating last send SQE with new size: " << active_buf_->size << std::endl;
         last_send_sqe_->len = active_buf_->size; // update the send length
+        return;
+      }
+
+      if (!sending_)
+      {
+        //std::cout << "Starting new send operation with updated size: " << active_buf_->size << std::endl;
+        start_send_operation();
       }
 
       return;
     }
+
+    //std::terminate();
+
 
     pending_buf_.emplace().index = buf_pool_.acquire_buffer();
     buf = buf_pool_.get_buffer(pending_buf_->index);

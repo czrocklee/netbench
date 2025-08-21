@@ -188,7 +188,9 @@ tracepoint:io_uring:io_uring_complete
 tracepoint:syscalls:sys_enter_io_uring_enter
 /comm == str($1)/
 {
-	printf("\n");
+	printf("%-12u %-6d %-16s %-20s %-16d %-10s op=%s, user_data=%-12u flags=0x%x\n",
+		0, pid, comm, "IO_URING_ENTER", args->fd, "-",
+		"XXX", 0, 0);
 }
 
 

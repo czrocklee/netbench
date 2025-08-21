@@ -1,0 +1,66 @@
+#!/usr/bin/bpftrace
+/*
+ * io_uring_trace.bt - A detailed tracer for io_uring applications.
+ *
+ * This script provides a detailed view of an io_uring application's lifecycle,
+ * including ring creation, request submission, and completion. It calculates
+ * the latency of each operation and decodes opcodes for readability.
+ *
+ * This version uses implicit map creation for maximum bpftrace version compatibility.
+ *
+ * USAGE:
+ * 1. Save this script as `io_uring_trace.bt`
+ * 2. Make it executable: `chmod +x io_uring_trace.bt`
+ * 3. Run it with sudo, passing the name of the target application:
+ * sudo ./io_uring_trace.bt your_app_name
+ *
+ * EXAMPLE:
+ * sudo ./io_uring_trace.bt my_web_server
+ */
+
+// Check for the command-line argument (the application name)
+BEGIN
+{
+	if ($# < 1) {
+		printf("USAGE: sudo ./zerocopy_trace.bt <comm>\n");
+		exit();
+	}
+}
+
+kprobe:skb_copy_datagram_from_iter
+/comm == str($1)/
+{
+    printf("skb_copy_datagram_from_iter called: likely fallback to copy (pid %d)\n", pid);
+}
+
+kprobe:zerocopy_fill_skb_from_iter
+/comm == str($1)/
+{
+    printf("zerocopy_fill_skb_from_iter called: actual zero-copy attempt (pid %d)\n", pid);
+}
+
+kprobe:tcp_sendmsg
+/comm == str($1)/
+{
+    printf("tcp_sendmsg: sock=%p size=%d, flags=0x%x\n", arg0, arg2, arg3);
+} 
+
+kprobe:sock_sendmsg
+/comm == str($1)/
+{
+    $msg = arg1;
+    $flags = *(int64 *)((uint64)$msg + 0x28); // Offset 0x28 is typical for msg_flags, but confirm in your kernel!
+    printf("sock_sendmsg: flags=0x%x, pid=%d\n", $flags, pid);
+}
+
+tracepoint:dma:dma_map_page
+/comm == str($1)/
+{ 
+	printf("dma_map_page: phys_addr=0x%x\n", args->phys_addr); 
+}
+
+// --- Cleanup on exit ---
+END
+{
+	printf("Detaching tracer.\n");
+}
