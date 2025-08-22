@@ -19,12 +19,13 @@ namespace uring
     using buffer_index_type = registered_buffer_pool::buffer_index_type;
     using socket_type = utility::ref_or_own<socket>;
 
-    sender(io_context& io_ctx, registered_buffer_pool& buf_pool);
+    sender(io_context& io_ctx, registered_buffer_pool& buf_pool, std::size_t max_buf_size = 1024 * 1024 * 64);
 
     enum flags : int
     {
       zerocopy = 1 << 0
     };
+
     void open(socket_type sock, flags f = static_cast<flags>(0));
     template<typename F>
     void send(std::size_t size, F&& f);
@@ -54,8 +55,8 @@ namespace uring
     flags flags_;
     int send_error_ = 0;
     bool sending_ = false;
-    std::optional<buffer_data> active_buf_;
-    std::optional<buffer_data> pending_buf_;
+    boost::circular_buffer<buffer_data> write_list_;
+    std::size_t active_index_ = 0;
     io_context::submit_sequence last_sub_seq_;
     ::io_uring_sqe* last_send_sqe_ = nullptr;
   };
@@ -65,74 +66,68 @@ namespace uring
   {
     if (send_error_ > 0) { throw std::runtime_error("send failed: " + std::string(strerror(send_error_))); }
 
-    if (!active_buf_)
+    auto const create_new_buf = [&] {
+      write_list_.push_back();
+      auto& data = write_list_.back();
+      data.index = buf_pool_.acquire_buffer();
+      auto buf = buf_pool_.get_buffer(data.index);
+      data.size = std::invoke(std::forward<F>(f), buf.data(), buf.size());
+    };
+
+    if (write_list_.empty())
     {
       LOG_TRACE("activating new buffer: size={}, is_sending={}", size, sending_);
-      active_buf_.emplace().index = buf_pool_.acquire_buffer();
-      auto buf = buf_pool_.get_buffer(active_buf_->index);
-      active_buf_->size = std::invoke(std::forward<F>(f), buf.data(), buf.size());
+      create_new_buf();
+      active_index_ = 0;
       start_send_operation();
       return;
     }
 
-    if (pending_buf_)
-    {
-      auto buf = buf_pool_.get_buffer(pending_buf_->index);
-      buf += (pending_buf_->offset + pending_buf_->size);
-      LOG_TRACE(
-        "appending to pending buffer: size={}, active_size={}, pending_size={}",
-        size,
-        active_buf_->size,
-        pending_buf_->size);
-
-      if (buf.size() < size)
-      {
-        std::terminate();
-        throw std::runtime_error("sender: insufficient buffer space");
-      }
-
-      pending_buf_->size += std::invoke(std::forward<F>(f), buf.data(), buf.size());
-      return;
-    }
-
-    auto buf = buf_pool_.get_buffer(active_buf_->index);
-    buf += (active_buf_->offset + active_buf_->size);
+    auto& data = write_list_.back();
+    auto buf = buf_pool_.get_buffer(data.index);
+    buf += (data.offset + data.size);
+    LOG_TRACE("buffer status: index={}, offset={}, size={}, remains={}", data.index.value(), data.offset, data.size, buf.size());
 
     if (buf.size() >= size)
     {
-      active_buf_->size += std::invoke(std::forward<F>(f), buf.data(), buf.size());
+      data.size += std::invoke(std::forward<F>(f), buf.data(), buf.size());
 
-      if (last_sub_seq_ == io_ctx_.get_submit_sequence())
+      if (write_list_.size() == active_index_ + 1)
       {
-        LOG_TRACE(
-          "appending to active buffer and updating last send SQE: size={}, new size: {}", size, active_buf_->size);
-        last_send_sqe_->len = active_buf_->size; // update the send length
+        if (last_sub_seq_ == io_ctx_.get_submit_sequence())
+        {
+          LOG_TRACE("appending to front buffer and updating last send SQE: size={}, new size: {}", size, data.size);
+          last_send_sqe_->len = data.size; // update the send length
+          return;
+        }
+
+        if (!sending_)
+        {
+          LOG_TRACE(
+            "appending to front buffer and starting new send operation: size={}, active_size={}", size, data.size);
+          start_send_operation();
+        }
+        else
+        {
+          LOG_TRACE(
+            "appending to front buffer while sending already started: size={}, active_size={}", size, data.size);
+        }
+
         return;
       }
 
-      if (!sending_)
-      {
-        LOG_TRACE(
-          "appending to active buffer and starting new send operation: size={}, active_size={}",
-          size,
-          active_buf_->size);
-        start_send_operation();
-      }
-      else
-      {
-        LOG_TRACE(
-          "appending to active buffer while sending already started: size={}, active_size={}", size, active_buf_->size);
-      }
-
-      return;
+      LOG_TRACE(
+        "appending to back buffer: size={}, active_size={}, back_size={}", size, write_list_[active_index_].size, data.size);
+        return;
     }
 
-    // std::terminate();
+    if (write_list_.full())
+    {
+      //std::terminate();
+      throw std::runtime_error("sender: insufficient buffer space");
+    }
 
-    pending_buf_.emplace().index = buf_pool_.acquire_buffer();
-    buf = buf_pool_.get_buffer(pending_buf_->index);
-    pending_buf_->size = std::invoke(std::forward<F>(f), buf.data(), buf.size());
-    LOG_TRACE(
-      "appending to pending buffer: size={}, pending_size={}, is_sending={}", size, pending_buf_->size, sending_);
+    create_new_buf();
+    LOG_TRACE("appending to newly created back buffer: size={}, pending_size={}, is_sending={}", size, data.size, sending_);
   }
 }

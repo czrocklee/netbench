@@ -70,7 +70,7 @@ private:
     net::receiver receiver;
 
 #ifdef IO_URING_API
-    net::sender sender{receiver.get_io_context(), receiver.get_io_context().get_buffer_pool()};
+    net::sender sender{receiver.get_io_context(), receiver.get_io_context().get_buffer_pool(), 1024 * 1024 * 128};
 #else
     net::sender sender{receiver.get_io_context()};
 #endif

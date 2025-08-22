@@ -28,7 +28,7 @@ namespace utility
 {
   inline void init_log_file(std::string const& filename)
   {
-    auto file_logger = spdlog::basic_logger_mt("file_logger", filename);
+    auto file_logger = spdlog::basic_logger_mt("file_logger", filename, true);
     spdlog::set_default_logger(file_logger);
   }
 
