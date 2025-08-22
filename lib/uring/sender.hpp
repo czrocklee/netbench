@@ -3,6 +3,7 @@
 #include "socket.hpp"
 #include "registered_buffer_pool.hpp"
 #include <utility/ref_or_own.hpp>
+#include <utility/logger.hpp>
 
 #include <boost/circular_buffer.hpp>
 #include <functional>
@@ -20,7 +21,10 @@ namespace uring
 
     sender(io_context& io_ctx, registered_buffer_pool& buf_pool);
 
-    enum flags : int { zerocopy = 1 << 0 };
+    enum flags : int
+    {
+      zerocopy = 1 << 0
+    };
     void open(socket_type sock, flags f = static_cast<flags>(0));
     template<typename F>
     void send(std::size_t size, F&& f);
@@ -32,7 +36,7 @@ namespace uring
     void start_send_operation();
     static void on_send_completion(::io_uring_cqe const& cqe, void* context);
     static void on_zc_send_completion(::io_uring_cqe const& cqe, void* context);
-    void on_zf_notify();
+    void on_zf_notify(::io_uring_cqe const& cqe);
 
     io_context& io_ctx_;
     socket_type sock_;
@@ -59,15 +63,11 @@ namespace uring
   template<typename F>
   void sender::send(std::size_t size, F&& f)
   {
-    //std::cout << "send requested: " << size << " bytes, is_sending: " << sending_ << std::endl;
-
-    if (send_error_ > 0)
-    {
-      throw std::runtime_error("send failed: " + std::string(strerror(send_error_)));
-    }
+    if (send_error_ > 0) { throw std::runtime_error("send failed: " + std::string(strerror(send_error_))); }
 
     if (!active_buf_)
     {
+      LOG_TRACE("activating new buffer: size={}, is_sending={}", size, sending_);
       active_buf_.emplace().index = buf_pool_.acquire_buffer();
       auto buf = buf_pool_.get_buffer(active_buf_->index);
       active_buf_->size = std::invoke(std::forward<F>(f), buf.data(), buf.size());
@@ -79,7 +79,12 @@ namespace uring
     {
       auto buf = buf_pool_.get_buffer(pending_buf_->index);
       buf += (pending_buf_->offset + pending_buf_->size);
-      //std::cout << "active buffer size: " << active_buf_->size << " pending buffer size: " << pending_buf_->size << std::endl;
+      LOG_TRACE(
+        "appending to pending buffer: size={}, active_size={}, pending_size={}",
+        size,
+        active_buf_->size,
+        pending_buf_->size);
+
       if (buf.size() < size)
       {
         std::terminate();
@@ -99,25 +104,35 @@ namespace uring
 
       if (last_sub_seq_ == io_ctx_.get_submit_sequence())
       {
-        //std::cout << "Updating last send SQE with new size: " << active_buf_->size << std::endl;
+        LOG_TRACE(
+          "appending to active buffer and updating last send SQE: size={}, new size: {}", size, active_buf_->size);
         last_send_sqe_->len = active_buf_->size; // update the send length
         return;
       }
 
       if (!sending_)
       {
-        //std::cout << "Starting new send operation with updated size: " << active_buf_->size << std::endl;
+        LOG_TRACE(
+          "appending to active buffer and starting new send operation: size={}, active_size={}",
+          size,
+          active_buf_->size);
         start_send_operation();
+      }
+      else
+      {
+        LOG_TRACE(
+          "appending to active buffer while sending already started: size={}, active_size={}", size, active_buf_->size);
       }
 
       return;
     }
 
-    //std::terminate();
-
+    // std::terminate();
 
     pending_buf_.emplace().index = buf_pool_.acquire_buffer();
     buf = buf_pool_.get_buffer(pending_buf_->index);
     pending_buf_->size = std::invoke(std::forward<F>(f), buf.data(), buf.size());
+    LOG_TRACE(
+      "appending to pending buffer: size={}, pending_size={}, is_sending={}", size, pending_buf_->size, sending_);
   }
 }

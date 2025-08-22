@@ -69,6 +69,7 @@ in
       mimalloc
       cli11
       magic-enum
+      spdlog
       hdrhistogram-c-lib
       zlib
       liburing-lib

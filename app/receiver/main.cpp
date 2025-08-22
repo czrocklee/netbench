@@ -1,7 +1,7 @@
 #include "worker.hpp"
 #include "../common/utils.hpp"
-
 #include <utility/metric_hud.hpp>
+#include <utility/logger.hpp>
 
 #include <CLI/CLI.hpp>
 #include <magic_enum/magic_enum.hpp>
@@ -63,6 +63,13 @@ int main(int argc, char** argv)
   unsigned num_workers;
   app.add_option("-w,--workers", num_workers, "Number of worker threads to start")->default_val(1);
 
+  std::string log_file;
+  app.add_option("-l,--log-file", log_file, "Path to log file")->default_val("/tmp/receiver.log");
+
+  std::string log_level;
+  app.add_option("-L,--log-level", log_level, "Minimum log level (trace, debug, info, warn, error, critical)")
+    ->default_val("info");
+
   CLI11_PARSE(app, argc, argv);
 
   if (num_workers <= 0)
@@ -76,6 +83,9 @@ int main(int argc, char** argv)
 
   try
   {
+    utility::init_log_file(log_file);
+    utility::set_log_level(utility::from_string(log_level));
+
     std::string host, port;
     parse_address(address_str, host, port);
 

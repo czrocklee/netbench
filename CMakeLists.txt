@@ -1,6 +1,19 @@
 cmake_minimum_required(VERSION 3.10)
 project(myproject)
 
+option(SPDLOG_LOGGER "Enable spdlog as logger backend" OFF)
+option(STDERR_LOGGER "Enable stderr as logger backend" OFF)
+
+if(SPDLOG_LOGGER AND STDERR_LOGGER)
+    message(FATAL_ERROR "Only one logger backend can be enabled at a time: SPDLOG_LOGGER or STDERR_LOGGER")
+elseif(SPDLOG_LOGGER)
+    add_compile_definitions(USE_SPDLOG_LOGGER SPDLOG_USE_STD_FORMAT)
+elseif(STDERR_LOGGER)
+    add_compile_definitions(USE_STDERR_LOGGER)
+else()
+    # No logger macro defined, falls back to null logger
+endif()
+
 # Add compiler flags if needed
 set(CMAKE_CXX_STANDARD 23)  # Or whatever standard you're using
 

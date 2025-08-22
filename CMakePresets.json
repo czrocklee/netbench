@@ -15,6 +15,26 @@
       }
     },
     {
+      "name": "profile-spdlog",
+      "inherits": "profile",
+      "displayName": "Profiling Build (spdlog)",
+      "description": "Profile build with spdlog logger backend.",
+      "cacheVariables": {
+        "SPDLOG_LOGGER": "ON",
+        "STDERR_LOGGER": "OFF"
+      }
+    },
+    {
+      "name": "profile-stderr",
+      "inherits": "profile",
+      "displayName": "Profiling Build (stderr)",
+      "description": "Profile build with stderr logger backend.",
+      "cacheVariables": {
+        "SPDLOG_LOGGER": "OFF",
+        "STDERR_LOGGER": "ON"
+      }
+    },
+    {
       "name": "release",
       "displayName": "Release Build",
       "description": "Standard release build with optimizations.",
