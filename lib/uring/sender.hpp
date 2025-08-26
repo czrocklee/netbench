@@ -54,6 +54,7 @@ namespace uring
 
     flags flags_;
     int send_error_ = 0;
+    int pending_zf_notify_ = 0;
     bool sending_ = false;
     boost::circular_buffer<buffer_data> write_list_;
     std::size_t active_index_ = 0;
@@ -86,7 +87,13 @@ namespace uring
     auto& data = write_list_.back();
     auto buf = buf_pool_.get_buffer(data.index);
     buf += (data.offset + data.size);
-    LOG_TRACE("buffer status: index={}, offset={}, size={}, remains={}", data.index.value(), data.offset, data.size, buf.size());
+    LOG_TRACE(
+      "buffer status: index={}, offset={}, size={}, remains={}, active_index={}",
+      data.index.value(),
+      data.offset,
+      data.size,
+      buf.size(),
+      active_index_);
 
     if (buf.size() >= size)
     {
@@ -117,17 +124,24 @@ namespace uring
       }
 
       LOG_TRACE(
-        "appending to back buffer: size={}, active_size={}, back_size={}", size, write_list_[active_index_].size, data.size);
-        return;
+        "appending to back buffer: size={}, active_size={}, back_size={}",
+        size,
+        write_list_[active_index_].size,
+        data.size);
+      return;
     }
 
     if (write_list_.full())
     {
-      //std::terminate();
+      // std::terminate();
       throw std::runtime_error("sender: insufficient buffer space");
     }
 
     create_new_buf();
-    LOG_TRACE("appending to newly created back buffer: size={}, pending_size={}, is_sending={}", size, data.size, sending_);
+
+    LOG_TRACE(
+      "appending to newly created back buffer: size={}, pending_size={}, is_sending={}", size, data.size, sending_);
+
+    if (!sending_) { start_send_operation(); }
   }
 }

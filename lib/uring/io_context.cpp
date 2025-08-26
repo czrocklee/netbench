@@ -1,5 +1,6 @@
 #include "io_context.hpp"
 #include "registered_buffer_pool.hpp"
+#include "utility/logger.hpp"
 
 #include <string.h>
 #include <sys/eventfd.h>
@@ -7,7 +8,6 @@
 #include <system_error>
 #include <unistd.h>
 #include <iostream>
-#include <boost/icl/interval_set.hpp>
 
 namespace uring
 {
@@ -68,6 +68,7 @@ namespace uring
 
       throw std::system_error{-ret, std::system_category(), "io_uring_submit failed"};
     }
+    else { LOG_TRACE("io_uring_submit_and_wait returned, start processing: fd={}, submitted={}", ring_.ring_fd, ret); }
 
     ++sub_seq_;
     ::io_uring_cqe* cqe;
@@ -80,7 +81,7 @@ namespace uring
       ++count;
     }
 
-    //std::cout << "cqe count this round " << count << std::endl;
+    // std::cout << "cqe count this round " << count << std::endl;
     ::io_uring_cq_advance(&ring_, count);
   }
 
