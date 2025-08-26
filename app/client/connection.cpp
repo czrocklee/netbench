@@ -4,19 +4,29 @@
 #include <utility/time.hpp>
 #include "../common/metadata.hpp"
 
+namespace
+{
+  static constexpr int timestamp_header_size = sizeof(std::uint64_t);
+}
+
 connection::connection(int conn_id, std::size_t msg_size) : conn_id_{conn_id}, sock_{AF_INET, SOCK_STREAM, 0}
 {
-  if (msg_size < sizeof(std::uint64_t))
+  if (msg_size < timestamp_header_size)
   {
     throw std::runtime_error{"Message size must be at least 8 bytes to store timestamp"};
   }
 
   msg_.reserve(msg_size);
-  msg_.emplace_back(std::byte{'_'});
+  msg_.resize(timestamp_header_size, std::byte{0});
 
-  for (std::size_t i = 1; i < msg_size; ++i)
+  if (msg_size > timestamp_header_size)
   {
-    msg_.emplace_back(std::byte{static_cast<unsigned char>('a' + ((i + conn_id_ - 1) % 26))});
+    msg_.emplace_back(std::byte{'-'});
+
+    for (std::size_t i = 0; i < msg_size - timestamp_header_size - 1; ++i)
+    {
+      msg_.emplace_back(std::byte{static_cast<unsigned char>('a' + ((i + conn_id_) % 26))});
+    }
   }
 
   std::fill_n(iov_, IOV_MAX, ::iovec{.iov_base = msg_.data(), .iov_len = msg_.size()});
@@ -55,17 +65,18 @@ std::size_t connection::try_send(std::size_t count)
 {
   std::size_t msgs_to_send = std::min(count, static_cast<std::size_t>(IOV_MAX));
 
-  /*
-  if (iov[0]_.iov_len == 0)
+  // Here we just using a single message and using iovec to replicate it for a whole batch.
+
+  if (auto sent = msg_.size() - iov_[0].iov_len; sent == 0 || sent >= timestamp_header_size)
   {
-    //std::uint64_t const now = utility::nanos_since_epoch();
-    //std::memcpy(msg_.data(), &now, sizeof(now));
-    iov_[i].iov_len = msg_.size();
+    std::uint64_t const now = utility::nanos_since_epoch();
+    std::memcpy(msg_.data(), &now, timestamp_header_size);
   }
-  else if (msg_.size() - iov[0]_.iov_len < sizeof(std::uint64_t)) // timestamp is not sent in last try
+  else
   {
-    msg_to_send = 1;
-  }*/
+    // Just send the rest of the message, sending a whole batch with updated timestamp will corrupt the last one
+    msgs_to_send = 1;
+  }
 
   std::size_t bytes_sent = 0;
 

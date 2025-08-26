@@ -41,13 +41,13 @@ namespace uring
 
   void registered_buffer_pool::release_buffer(buffer_index_type buf_idx) noexcept
   {
-    assert(buf_idx < buf_cnt_ && "Buffer index out of range");
+    assert(buf_idx < get_buffer_count() && "Buffer index out of range");
     free_stack_.push_back(buf_idx);
   }
 
   ::asio::mutable_buffer registered_buffer_pool::get_buffer(buffer_index_type buf_idx) const noexcept
   {
-    assert(buf_idx < buf_cnt_ && "Buffer index out of range");
+    assert(buf_idx < get_buffer_count() && "Buffer index out of range");
     auto* addr = buf_array_.get(buf_idx);
     return ::asio::buffer(addr, get_buffer_size());
   }

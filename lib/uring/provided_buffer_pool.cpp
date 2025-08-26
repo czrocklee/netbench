@@ -102,12 +102,13 @@ namespace uring
   void provided_buffer_pool::adjust_buffer_size(buffer_id_type buf_id, int offset) noexcept
   {
     actual_buf_size_[buf_id] += offset;
-    assert(actual_buf_size_[buf_id] >= 0 && actual_buf_size_[buf_id] <= buf_size_);
+    assert(
+      actual_buf_size_[buf_id] >= 0 && actual_buf_size_[buf_id] <= get_buffer_size() && "Buffer size out of range");
   }
 
   std::byte* provided_buffer_pool::get_buffer_address(buffer_id_type buf_id) const noexcept
   {
-    assert(buf_id.value() < buf_cnt_);
+    assert(buf_id.value() < get_buffer_count() && "Buffer index out of range");
     return buf_array_.get(buf_id.value());
   }
 

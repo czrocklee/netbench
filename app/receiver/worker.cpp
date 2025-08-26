@@ -88,10 +88,12 @@ void worker::add_connection(net::socket sock)
       net::sender::flags f{};
       
       if (config_.zerocopy) { f |= net::sender::flags::zerocopy; }
-      
-      iter->sender.open(iter->receiver.get_socket(), f);
+
+      iter->sender.emplace(io_ctx_, io_ctx_.get_buffer_pool(), 1024 * 1024 * 128);
+      iter->sender->open(iter->receiver.get_socket(), f);
 #else
-      iter->sender.open(iter->receiver.get_socket()); 
+      iter->sender.emplace(io_ctx_);
+      iter->sender->open(iter->receiver.get_socket());
 #endif
     }
 
@@ -141,7 +143,7 @@ void worker::on_data(connection& conn, ::asio::const_buffer const data)
     //std::cout << "partial buffer not empty, size: " << conn.partial_buffer_size << " data_left: " << data_left.size() << std::endl;
     auto addr = reinterpret_cast<std::byte const*>(data_left.data());
     auto size = std::min(conn.msg_size - conn.partial_buffer_size, data_left.size());
-    //std::memcpy(conn.partial_buffer.get() + conn.partial_buffer_size, addr, size);
+    std::memcpy(conn.partial_buffer.get() + conn.partial_buffer_size, addr, size);
     conn.partial_buffer_size += size;
 
     if (conn.partial_buffer_size == conn.msg_size)
@@ -160,7 +162,7 @@ void worker::on_data(connection& conn, ::asio::const_buffer const data)
     if (data_left.size() < conn.msg_size)
     {
       //std::cout << "remaining bytes: " << data_left.size() << std::endl;
-      //std::memcpy(conn.partial_buffer.get(), addr, data_left.size());
+      std::memcpy(conn.partial_buffer.get(), addr, data_left.size());
       conn.partial_buffer_size = data_left.size();
       break;
     }
@@ -173,7 +175,7 @@ void worker::on_data(connection& conn, ::asio::const_buffer const data)
   {
     try
     {
-      conn.sender.send(data.data(), data.size());
+      conn.sender->send(data.data(), data.size());
     }
     catch (std::exception const& e)
     {
@@ -188,17 +190,21 @@ void worker::on_data(connection& conn, ::asio::const_buffer const data)
 
 void worker::on_new_message(connection& conn,void const* buffer)
 {
-  // auto const now = utility::nanos_since_epoch();
-  // std::uint64_t send_ts;
-  // std::memcpy(&send_ts, buffer, sizeof(send_ts));
   ++metrics_.msgs;
-  // metrics_.update_latency_histogram(now - send_ts);
+
+  if (config_.collect_latency_every_n_samples > 0 && metrics_.msgs % config_.collect_latency_every_n_samples == 0)
+  {
+    auto const now = utility::nanos_since_epoch();
+    std::uint64_t send_ts;
+    std::memcpy(&send_ts, buffer, sizeof(send_ts));
+    metrics_.update_latency_histogram(now - send_ts);
+  }
 
   if (config_.echo == config::echo_mode::per_msg)
   {
     try
     {
-      conn.sender.send(buffer, conn.msg_size);
+      conn.sender->send(buffer, conn.msg_size);
     }
     catch (std::exception const& e)
     {

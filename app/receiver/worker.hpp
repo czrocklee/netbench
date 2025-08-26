@@ -36,6 +36,7 @@ public:
 
     echo_mode echo = echo_mode::none;
     std::size_t buffer_size;
+    int collect_latency_every_n_samples;
 #ifdef IO_URING_API
     bool zerocopy;
     std::uint32_t uring_depth;
@@ -68,12 +69,7 @@ private:
     }
 
     net::receiver receiver;
-
-#ifdef IO_URING_API
-    net::sender sender{receiver.get_io_context(), receiver.get_io_context().get_buffer_pool(), 1024 * 1024 * 128};
-#else
-    net::sender sender{receiver.get_io_context()};
-#endif
+    std::optional<net::sender> sender;
     std::size_t msg_size;
     std::unique_ptr<std::byte[]> partial_buffer;
     std::size_t partial_buffer_size = 0;

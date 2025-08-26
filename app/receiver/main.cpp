@@ -45,6 +45,13 @@ int main(int argc, char** argv)
 
   app.add_option("-b,--buffer-size", cfg.buffer_size, "Size of receive buffer in bytes")->default_val(1024);
 
+  app
+    .add_option(
+      "-C,--collect-latency-every-n-samples",
+      cfg.collect_latency_every_n_samples,
+      "Collect latency metrics every n samples")
+    ->default_val(0);
+
 #ifdef IO_URING_API
   app.add_option("-z,--zerocopy", cfg.zerocopy, "Use zerocopy send or not")->default_val(true);
 
@@ -53,7 +60,7 @@ int main(int argc, char** argv)
 
   app.add_option("-d,--uring-depth", cfg.uring_depth, "io_uring queue depth")->default_val(1024 * 16);
 #elifdef BSD_API
-  app.add_option("-l,--read-limit", cfg.read_limit, "Optional read limit for BSD API (0 for no limit)")
+  app.add_option("-r,--read-limit", cfg.read_limit, "Optional read limit for BSD API (0 for no limit)")
     ->default_val(1024 * 64);
 #endif
 
