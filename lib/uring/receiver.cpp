@@ -57,8 +57,10 @@ namespace uring
 
   void receiver::new_multishot_recv_op()
   {
-    auto& sqe = io_ctx_.create_request(recv_handle_, sock_.get_file_handle(), on_multishot_recv, this);
-    ::io_uring_prep_recv_multishot(&sqe, sock_.get_file_handle().get_fd(), nullptr, 0, 0);
+    auto const& file_handle = sock_.get_file_handle();
+    auto& sqe = io_ctx_.create_request(recv_handle_, on_multishot_recv, this);
+    file_handle.update_sqe_flag(sqe);
+    ::io_uring_prep_recv_multishot(&sqe, file_handle.get_fd(), nullptr, 0, 0);
     sqe.flags |= IOSQE_BUFFER_SELECT;
     sqe.buf_group = buffer_pool_.get_group_id();
     std::cout << "Created recv operation: " << sqe.user_data << std::endl;

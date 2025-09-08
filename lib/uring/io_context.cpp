@@ -8,6 +8,7 @@
 #include <system_error>
 #include <unistd.h>
 #include <iostream>
+#include <cassert>
 
 namespace uring
 {
@@ -36,8 +37,8 @@ namespace uring
 
   void io_context::poll()
   {
+    finish_preparing_requests();
 
-    // if (int ret = io_uring_submit(&ring_); ret < 0)
     if (int ret = io_uring_submit(&ring_); ret < 0)
     {
       // EINTR is a recoverable error, we can just try again on the next poll.
@@ -46,7 +47,6 @@ namespace uring
       throw std::system_error{-ret, std::system_category(), "io_uring_submit failed"};
     }
 
-    ++sub_seq_;
     ::io_uring_cqe* cqes[16];
 
     auto count = ::io_uring_peek_batch_cqe(&ring_, cqes, 16);
@@ -60,6 +60,7 @@ namespace uring
 
   void io_context::poll_wait()
   {
+    finish_preparing_requests();
 
     if (int ret = io_uring_submit_and_wait(&ring_, 1); ret < 0)
     {
@@ -70,7 +71,6 @@ namespace uring
     }
     else { LOG_TRACE("io_uring_submit_and_wait returned, start processing: fd={}, submitted={}", ring_.ring_fd, ret); }
 
-    ++sub_seq_;
     ::io_uring_cqe* cqe;
     unsigned head;
     unsigned count = 0;
@@ -120,36 +120,38 @@ namespace uring
     buf_pool_ = std::make_unique<registered_buffer_pool>(*this, buf_size, buf_cnt);
   }
 
-  ::io_uring_sqe& io_context::create_request(request_handle& handle, handler_type handler, void* context)
+  ::io_uring_sqe& io_context::create_request(request_handle& handle, completion_handler_type handler, void* context)
   {
     ::io_uring_sqe* sqe = nullptr;
 
-    while ((sqe = io_uring_get_sqe(&ring_)) == nullptr)
-    {
-      io_uring_submit(&ring_);
-      ++sub_seq_;
-    }
+    while ((sqe = io_uring_get_sqe(&ring_)) == nullptr) { io_uring_submit(&ring_); }
 
-    if (!handle.is_valid() || handle.io_ctx_ != this) { handle = new_request(handler, context); }
-    else { *handle.data_iter_ = req_data{.handler = handler, .context = context}; }
+    req_data data{.completion_handler = handler, .completion_context = context};
+
+    if (!handle.is_valid() || handle.io_ctx_ != this) { handle = new_request(data); }
+    else { *handle.data_iter_ = data; }
 
     ::io_uring_sqe_set_data(sqe, std::addressof(*handle.data_iter_));
 
     return *sqe;
   }
 
-  ::io_uring_sqe&
-  io_context::create_request(request_handle& handle, file_handle const& file, handler_type handler, void* context)
+  void io_context::prepare_request(request_handle& handle, prepare_handler_type handler, void* context)
   {
-    auto& sqe = create_request(handle, handler, context);
-    sqe.fd = file.get_fd();
+    if (!handle.is_valid() || handle.io_ctx_ != this)
+    {
+      handle = new_request(req_data{.prepare_handler = handler, .prepare_context = context});
+    }
+    else
+    {
+      handle.data_iter_->prepare_handler = handler;
+      handle.data_iter_->prepare_context = context;
+    }
 
-    if (file.has_fixed()) { sqe.flags |= IOSQE_FIXED_FILE; }
-
-    return sqe;
+    preparing_data_list_.push_back(&*handle.data_iter_);
   }
 
-  io_context::request_handle io_context::new_request(handler_type handler, void* context)
+  io_context::request_handle io_context::new_request(req_data data)
   {
     data_node_iter iter;
 
@@ -157,20 +159,43 @@ namespace uring
     {
       active_data_list_.splice(active_data_list_.begin(), free_data_list_, free_data_list_.begin());
       iter = active_data_list_.begin();
-      *iter = req_data{.handler = handler, .context = context};
+      *iter = data;
     }
-    else
-    {
-      iter = active_data_list_.emplace(active_data_list_.begin(), req_data{.handler = handler, .context = context});
-    }
+    else { iter = active_data_list_.emplace(active_data_list_.begin(), data); }
 
     return request_handle{*this, iter};
   }
 
   void io_context::free_request(request_handle& handle)
   {
-    handle.data_iter_->handler = nullptr;
+    *handle.data_iter_ = req_data{};
     free_data_list_.splice(free_data_list_.begin(), active_data_list_, handle.data_iter_);
+  }
+
+  void io_context::finish_preparing_requests()
+  {
+    if (!preparing_data_list_.empty())
+    {
+      for (auto* req : preparing_data_list_)
+      {
+        if (req->prepare_handler != nullptr)
+        {
+          ::io_uring_sqe* sqe = nullptr;
+
+          while ((sqe = io_uring_get_sqe(&ring_)) == nullptr) { io_uring_submit(&ring_); }
+
+          ::io_uring_sqe_set_data(sqe, req);
+          LOG_TRACE(
+            "prepare request: sqe={:x}, sqe.data={:x}, data={:x}",
+            reinterpret_cast<std::uintptr_t>(sqe),
+            sqe->user_data,
+            reinterpret_cast<std::uintptr_t>(req));
+          req->prepare_handler(*sqe, req->prepare_context);
+        }
+      }
+
+      preparing_data_list_.clear();
+    }
   }
 
   void io_context::init(unsigned entries, ::io_uring_params& params)
@@ -247,7 +272,16 @@ namespace uring
   {
     auto* data = reinterpret_cast<req_data*>(::io_uring_cqe_get_data(cqe));
 
-    if (data->handler != nullptr) { data->handler(*cqe, data->context); }
+    /*    LOG_TRACE(
+         "Processing cqe: res={}, flags={}, data={}, handler={}, context={}",
+         cqe->res,
+         cqe->flags,
+         (void*)data,
+         data ? data->completion_handler : nullptr,
+         data ? data->completion_context : nullptr); */
+
+    if (data->completion_handler != nullptr) { data->completion_handler(*cqe, data->completion_context); }
+    else { LOG_TRACE("No completion handler set for this cqe"); }
   }
 
   io_context::request_handle::request_handle(io_context& io_ctx, data_node_iter data_iter)
@@ -282,8 +316,20 @@ namespace uring
     return *this;
   }
 
+  void io_context::request_handle::set_completion_handler(completion_handler_type handler, void* context) noexcept
+  {
+    assert(is_valid() && "Cannot set handler on an invalid request_handle");
+    data_iter_->completion_handler = handler;
+    data_iter_->completion_context = context;
+  }
+
   io_context::file_handle::file_handle(int fd) : file_handle{fd, nullptr}
   {
+  }
+
+  void io_context::file_handle::update_sqe_flag(::io_uring_sqe& sqe) const noexcept
+  {
+    if (has_fixed()) { sqe.flags |= IOSQE_FIXED_FILE; }
   }
 
   io_context::file_handle::file_handle(int fd, io_context* io_ctx) : fd_{fd}, io_ctx_{io_ctx}

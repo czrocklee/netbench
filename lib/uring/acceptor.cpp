@@ -40,8 +40,10 @@ namespace uring
 
   void acceptor::new_multishot_accept_op()
   {
-    auto& sqe = io_ctx_.create_request(accept_handle_, listen_sock_.get_file_handle(), on_multishot_accept, this);
-    ::io_uring_prep_multishot_accept(&sqe, listen_sock_.get_file_handle().get_fd(), nullptr, nullptr, 0);
+    auto const& file_handle = listen_sock_.get_file_handle();
+    auto& sqe = io_ctx_.create_request(accept_handle_, on_multishot_accept, this);
+    file_handle.update_sqe_flag(sqe);
+    ::io_uring_prep_multishot_accept(&sqe, file_handle.get_fd(), nullptr, nullptr, 0);
   }
 
 } // namespace uring

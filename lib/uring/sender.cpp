@@ -1,4 +1,5 @@
 #include "sender.hpp"
+#include <magic_enum/magic_enum.hpp>
 
 namespace uring
 {
@@ -37,7 +38,16 @@ namespace uring
     });
   }
 
-  void sender::start_send_operation()
+  void sender::prepare_send_operation()
+  {
+    io_ctx_.prepare_request(
+      send_handle_,
+      [](::io_uring_sqe& sqe, void* context) { static_cast<sender*>(context)->on_submit_send_operation(sqe); },
+      this);
+    state_ = state::open;
+  }
+
+  void sender::on_submit_send_operation(::io_uring_sqe& sqe)
   {
     /*     std::cout << "Starting send operation with active buffer size: " << active_buf_->size
                   << " pending buffer size: " << (pending_buf_ ? pending_buf_->size : 0) << std::endl; */
@@ -48,7 +58,10 @@ namespace uring
     if (flags_ & flags::zerocopy)
     {
       LOG_DEBUG("starting zerocopy send operation: size={}, index={}", data.size, active_index_);
-      auto& sqe = io_ctx_.create_request(send_handle_, file, on_zc_send_completion, this);
+      send_handle_.set_completion_handler(
+        [](::io_uring_cqe const& cqe, void* context) { static_cast<sender*>(context)->on_zc_send_completion(cqe); },
+        this);
+
       ::io_uring_prep_send_zc_fixed(&sqe, file.get_fd(), buf.data(), data.size, 0, 0, data.index.value());
       sqe.ioprio |= IORING_SEND_ZC_REPORT_USAGE;
       ++data.pending_zf_notify;
@@ -58,7 +71,8 @@ namespace uring
     else
     {
       LOG_DEBUG("starting regular send operation: size={}, index={}", data.size, active_index_);
-      auto& sqe = io_ctx_.create_request(send_handle_, file, on_send_completion, this);
+      send_handle_.set_completion_handler(
+        [](::io_uring_cqe const& cqe, void* context) { static_cast<sender*>(context)->on_send_completion(cqe); }, this);
       ::io_uring_prep_write_fixed(&sqe, file.get_fd(), buf.data(), data.size, 0, data.index.value());
       /*       ::io_uring_prep_send(&sqe, file.get_fd(), buf.data(), data.size, 0);
             sqe.ioprio |= IORING_RECVSEND_FIXED_BUF;
@@ -66,23 +80,20 @@ namespace uring
       last_send_sqe_ = &sqe;
     }
 
-    sending_ = true;
-    last_sub_seq_ = io_ctx_.get_submit_sequence();
+    state_ = state::submitted;
   }
 
-  void sender::on_send_completion(::io_uring_cqe const& cqe, void* context)
+  void sender::on_send_completion(::io_uring_cqe const& cqe)
   {
-    auto& self = *static_cast<sender*>(context);
-
     if (cqe.res < 0)
     {
-      self.send_error_ = -cqe.res;
-      std::cerr << "send failed: " << strerror(self.send_error_) << std::endl;
+      send_error_ = -cqe.res;
+      std::cerr << "send failed: " << strerror(send_error_) << std::endl;
       return;
     }
 
     auto const bytes_sent = static_cast<std::size_t>(cqe.res);
-    auto& data = self.write_list_.front();
+    auto& data = write_list_.front();
     data.offset += bytes_sent;
     data.size -= bytes_sent;
 
@@ -92,46 +103,48 @@ namespace uring
         "send completion and keep sending: bytes_sent={}, active_size={}, pending_bufs={}",
         bytes_sent,
         data.size,
-        self.write_list_.size());
-      self.start_send_operation();
+        write_list_.size());
+      prepare_send_operation();
       return;
     }
 
-    self.buf_pool_.release_buffer(data.index);
-    self.write_list_.pop_front();
-    self.sending_ = false;
+    buf_pool_.release_buffer(data.index);
+    write_list_.pop_front();
 
-    if (!self.write_list_.empty())
+    if (!write_list_.empty())
     {
       LOG_DEBUG(
         "send completion and switch to next buffer: bytes_sent={}, active_size={}, pending_bufs={}",
         bytes_sent,
-        self.write_list_.front().size,
-        self.write_list_.size());
-      self.start_send_operation();
+        write_list_.front().size,
+        write_list_.size());
+      prepare_send_operation();
     }
-    else { LOG_DEBUG("send completion and no more data to send: bytes_sent={}", bytes_sent); }
+    else
+    {
+      state_ = state::idle;
+      LOG_DEBUG("send completion and no more data to send: bytes_sent={}", bytes_sent);
+    }
   }
 
-  void sender::on_zc_send_completion(::io_uring_cqe const& cqe, void* context)
+  void sender::on_zc_send_completion(::io_uring_cqe const& cqe)
   {
-    auto& self = *static_cast<sender*>(context);
-
     if (cqe.flags & IORING_CQE_F_NOTIF)
     {
-      self.on_zf_notify(cqe);
+      LOG_TRACE("received zerocopy notify");
+      on_zf_notify(cqe);
       return;
     }
 
     if (cqe.res < 0)
     {
-      self.send_error_ = -cqe.res;
-      std::cerr << "send failed: " << strerror(self.send_error_) << std::endl;
+      send_error_ = -cqe.res;
+      std::cerr << "send failed: " << strerror(send_error_) << std::endl;
       return;
     }
 
     auto const bytes_sent = static_cast<std::size_t>(cqe.res);
-    auto& data = self.write_list_[self.active_index_];
+    auto& data = write_list_[active_index_];
     data.offset += bytes_sent;
     data.size -= bytes_sent;
 
@@ -143,30 +156,30 @@ namespace uring
       LOG_DEBUG(
         "zerocopy send completion and keep sending: bytes_sent={}, active_index={}, active_size={}, pending_bufs={}",
         bytes_sent,
-        self.active_index_,
+        active_index_,
         data.size,
-        self.write_list_.size() - self.active_index_);
-      self.start_send_operation();
+        write_list_.size() - active_index_);
+      prepare_send_operation();
       return;
     }
 
-    self.sending_ = false;
-
-    if (self.write_list_.size() > self.active_index_ + 1)
+    if (write_list_.size() > active_index_ + 1)
     {
-      ++self.active_index_;
+      ++active_index_;
       LOG_DEBUG(
-        "zerocopy completion and switch to next buffer: bytes_sent={}, active_index={}, active_size={}, pending_bufs={}",
+        "zerocopy completion and switch to next buffer: bytes_sent={}, active_index={}, active_size={}, "
+        "pending_bufs={}",
         bytes_sent,
-        self.active_index_,
-        self.write_list_[self.active_index_].size,
-        self.write_list_.size() - self.active_index_);
-      self.start_send_operation();
+        active_index_,
+        write_list_[active_index_].size,
+        write_list_.size() - active_index_);
+      prepare_send_operation();
     }
     else
     {
+      state_ = state::idle;
       LOG_DEBUG(
-        "zerocopy send completion and no more data to send: bytes_sent={}, active_index={}", bytes_sent, self.active_index_);
+        "zerocopy send completion and no more data to send: bytes_sent={}, active_index={}", bytes_sent, active_index_);
     }
   }
 
@@ -181,7 +194,9 @@ namespace uring
     {
       buf_pool_.release_buffer(data.index);
       write_list_.pop_front();
-      --active_index_;
+      
+      if (active_index_ > 0) { --active_index_; }
+      
       LOG_DEBUG(
         "zerocopy send notif, front buffer cleared: err={}, front_counter={}, active_index={}, pending_zf_notify={}",
         std::strerror(-cqe.res),
@@ -192,10 +207,10 @@ namespace uring
     else
     {
       LOG_DEBUG(
-        "zerocopy send notif: err={}, front_counter={}, is_sending={}, active_index={}, pending_zf_notify={}",
+        "zerocopy send notif: err={}, front_counter={}, state={}, active_index={}, pending_zf_notify={}",
         std::strerror(-cqe.res),
         data.pending_zf_notify,
-        sending_,
+        magic_enum::enum_name(state_),
         active_index_,
         pending_zf_notify_);
     }

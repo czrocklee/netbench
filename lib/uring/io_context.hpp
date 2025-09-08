@@ -31,9 +31,6 @@ namespace uring
 
     [[nodiscard]] ::io_uring& get_ring() noexcept { return ring_; }
 
-    using submit_sequence = utility::tagged_integer<std::uint64_t, struct submit_sequence_tag, 0>;
-    [[nodiscard]] submit_sequence get_submit_sequence() const noexcept { return sub_seq_; }
-
     class file_handle;
     [[nodiscard]] file_handle create_fixed_file(int fd);
 
@@ -41,32 +38,37 @@ namespace uring
     [[nodiscard]] registered_buffer_pool& get_buffer_pool() noexcept { return *buf_pool_; }
 
     class request_handle;
-    using handler_type = void (*)(::io_uring_cqe const&, void* context);
-    ::io_uring_sqe& create_request(request_handle& handle, handler_type handler, void* context);
-    ::io_uring_sqe&
-    create_request(request_handle& handle, file_handle const& file, handler_type handler, void* context);
+    using completion_handler_type = void (*)(::io_uring_cqe const&, void* context);
+    [[nodiscard]] ::io_uring_sqe&
+      create_request(request_handle& handle, completion_handler_type handler, void* context);
+
+    using prepare_handler_type = void (*)(::io_uring_sqe&, void* context);
+    void prepare_request(request_handle& handle, prepare_handler_type handler, void* context);
 
   private:
+    struct req_data
+    {
+      prepare_handler_type prepare_handler = nullptr;
+      void* prepare_context = nullptr;
+      completion_handler_type completion_handler = nullptr;
+      void* completion_context = nullptr;
+    };
+
     void init(unsigned entries, ::io_uring_params& params);
     static void on_wakeup(::io_uring_cqe const& cqe, void* context);
     void rearm_wakeup_event();
     void run_for_impl(__kernel_timespec const* ts);
     void process_cqe(::io_uring_cqe* cqe);
-    request_handle new_request(handler_type handler, void* context);
+    request_handle new_request(req_data data);
     void free_request(request_handle& handle);
-
-    struct req_data
-    {
-      handler_type handler;
-      void* context;
-    };
+    void finish_preparing_requests();
 
     ::io_uring ring_;
-    submit_sequence sub_seq_;
 
     using data_node_iter = std::list<req_data>::iterator;
     std::list<req_data> free_data_list_;
     std::list<req_data> active_data_list_;
+    std::vector<req_data*> preparing_data_list_;
 
     int wakeup_fd_ = -1;
     std::uint64_t wakeup_buffer_;
@@ -102,6 +104,7 @@ namespace uring
     request_handle(request_handle&& other) noexcept;
     request_handle& operator=(request_handle&& other) noexcept;
 
+    void set_completion_handler(completion_handler_type handler, void* context) noexcept;
     bool is_valid() const noexcept { return io_ctx_ != nullptr; }
 
   private:
@@ -125,6 +128,7 @@ namespace uring
     int get_fd() const noexcept { return fd_; }
     bool is_valid() const noexcept { return fd_ != -1; }
     bool has_fixed() const noexcept { return io_ctx_ != nullptr; }
+    void update_sqe_flag(::io_uring_sqe& sqe) const noexcept;
 
   private:
     file_handle(int fd, io_context* io_ctx);

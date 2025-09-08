@@ -6,10 +6,11 @@
 #include <utility/logger.hpp>
 
 #include <boost/circular_buffer.hpp>
+#include <magic_enum/magic_enum.hpp>
+
 #include <functional>
 #include <iostream>
 #include <cassert>
-#include <deque>
 
 namespace uring
 {
@@ -23,6 +24,7 @@ namespace uring
 
     enum flags : int
     {
+      none = 0,
       zerocopy = 1 << 0
     };
 
@@ -34,9 +36,12 @@ namespace uring
     [[nodiscard]] socket& get_socket() noexcept { return sock_.get(); }
 
   private:
-    void start_send_operation();
-    static void on_send_completion(::io_uring_cqe const& cqe, void* context);
-    static void on_zc_send_completion(::io_uring_cqe const& cqe, void* context);
+    template<typename F>
+    void append_write_list(std::size_t size, F&& f);
+    void prepare_send_operation();
+    void on_submit_send_operation(::io_uring_sqe& sqe);
+    void on_send_completion(::io_uring_cqe const& cqe);
+    void on_zc_send_completion(::io_uring_cqe const& cqe);
     void on_zf_notify(::io_uring_cqe const& cqe);
 
     io_context& io_ctx_;
@@ -52,13 +57,19 @@ namespace uring
       std::size_t pending_zf_notify = 0;
     };
 
-    flags flags_;
+    enum class state
+    {
+      idle,
+      open,
+      submitted
+    };
+
+    state state_ = state::idle;
+    flags flags_ = flags::none;
     int send_error_ = 0;
     int pending_zf_notify_ = 0;
-    bool sending_ = false;
     boost::circular_buffer<buffer_data> write_list_;
     std::size_t active_index_ = 0;
-    io_context::submit_sequence last_sub_seq_;
     ::io_uring_sqe* last_send_sqe_ = nullptr;
   };
 
@@ -67,67 +78,56 @@ namespace uring
   {
     if (send_error_ > 0) { throw std::runtime_error("send failed: " + std::string(strerror(send_error_))); }
 
+    append_write_list(size, std::forward<F>(f));
+
+    if (state_ == state::idle)
+    {
+      prepare_send_operation();
+      return;
+    }
+  }
+
+  template<typename F>
+  void sender::append_write_list(std::size_t size, F&& f)
+  {
     auto const create_new_buf = [&] {
       write_list_.push_back();
       auto& data = write_list_.back();
       data.index = buf_pool_.acquire_buffer();
       auto buf = buf_pool_.get_buffer(data.index);
       data.size = std::invoke(std::forward<F>(f), buf.data(), buf.size());
+      LOG_TRACE(
+        "acquire new buffer: state={}, index={}, offset={}, size={}, remains={}, active_index={}",
+        magic_enum::enum_name(state_),
+        data.index.value(),
+        data.offset,
+        data.size,
+        buf.size(),
+        active_index_);
     };
 
     if (write_list_.empty())
     {
-      LOG_TRACE("activating new buffer: size={}, is_sending={}", size, sending_);
       create_new_buf();
-      active_index_ = 0;
-      start_send_operation();
       return;
     }
 
     auto& data = write_list_.back();
     auto buf = buf_pool_.get_buffer(data.index);
     buf += (data.offset + data.size);
-    LOG_TRACE(
-      "buffer status: index={}, offset={}, size={}, remains={}, active_index={}",
-      data.index.value(),
-      data.offset,
-      data.size,
-      buf.size(),
-      active_index_);
 
     if (buf.size() >= size)
     {
       data.size += std::invoke(std::forward<F>(f), buf.data(), buf.size());
 
-      if (write_list_.size() == active_index_ + 1)
-      {
-        if (last_sub_seq_ == io_ctx_.get_submit_sequence())
-        {
-          LOG_TRACE("appending to front buffer and updating last send SQE: size={}, new size: {}", size, data.size);
-          last_send_sqe_->len = data.size; // update the send length
-          return;
-        }
-
-        if (!sending_)
-        {
-          LOG_TRACE(
-            "appending to front buffer and starting new send operation: size={}, active_size={}", size, data.size);
-          start_send_operation();
-        }
-        else
-        {
-          LOG_TRACE(
-            "appending to front buffer while sending already started: size={}, active_size={}", size, data.size);
-        }
-
-        return;
-      }
-
       LOG_TRACE(
-        "appending to back buffer: size={}, active_size={}, back_size={}",
-        size,
-        write_list_[active_index_].size,
-        data.size);
+        "append to buffer: state={}, index={}, offset={}, size={}, remains={}, active_index={}",
+        magic_enum::enum_name(state_),
+        data.index.value(),
+        data.offset,
+        data.size,
+        buf.size(),
+        active_index_);
       return;
     }
 
@@ -138,10 +138,5 @@ namespace uring
     }
 
     create_new_buf();
-
-    LOG_TRACE(
-      "appending to newly created back buffer: size={}, pending_size={}, is_sending={}", size, data.size, sending_);
-
-    if (!sending_) { start_send_operation(); }
   }
 }

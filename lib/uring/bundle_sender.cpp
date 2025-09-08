@@ -95,12 +95,14 @@ namespace uring
   {
     state_ = state::fastpath;
 
+    auto const& file_handle = get_socket().get_file_handle();
     auto& sqe = io_ctx_.create_request(
-      fixed_buf_data_->send_handle, get_socket().get_file_handle(), on_fixed_buffer_send_completion, this);
+      fixed_buf_data_->send_handle, on_fixed_buffer_send_completion, this);
+    file_handle.update_sqe_flag(sqe);
     sqe.ioprio |= IORING_SEND_ZC_REPORT_USAGE;
     ::io_uring_prep_send_zc_fixed(
       &sqe,
-      get_socket().get_file_handle().get_fd(),
+      file_handle.get_fd(),
       fixed_buf_data_->buf.data(),
       fixed_buf_data_->buf.size(),
       MSG_WAITALL,
@@ -159,12 +161,13 @@ namespace uring
       if (bytes < cur_buf.size())
       {
         state_ = state::retrying;
+        auto const& file_handle = get_socket().get_file_handle();
         auto& sqe =
-          io_ctx_.create_request(send_handle_, get_socket().get_file_handle(), on_retry_send_completion, this);
-
+          io_ctx_.create_request(send_handle_, on_retry_send_completion, this);
+        file_handle.update_sqe_flag(sqe);
         ::io_uring_prep_send(
           &sqe,
-          get_socket().get_file_handle().get_fd(),
+          file_handle.get_fd(),
           static_cast<std::byte const*>(cur_buf.data()) + bytes,
           cur_buf.size() - bytes,
           0);
@@ -187,8 +190,10 @@ namespace uring
     // std::cout << "starting bundle send operation " << buf_id_head_.value() << " " << buf_id_tail_.value() <<
     // std::endl;
     state_ = state::sending;
-    auto& sqe = io_ctx_.create_request(send_handle_, get_socket().get_file_handle(), on_bundle_send_completion, this);
-    ::io_uring_prep_send_bundle(&sqe, get_socket().get_file_handle().get_fd(), 0, 0);
+    auto const& file_handle = get_socket().get_file_handle();
+    auto& sqe = io_ctx_.create_request(send_handle_, on_bundle_send_completion, this);
+    file_handle.update_sqe_flag(sqe);
+    ::io_uring_prep_send_bundle(&sqe, file_handle.get_fd(), 0, 0);
     sqe.buf_group = buf_pool_.get_group_id();
     sqe.flags |= IOSQE_BUFFER_SELECT;
   }

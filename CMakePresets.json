@@ -53,7 +53,8 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_VERBOSE_MAKEFILE": "ON",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "STDERR_LOGGER": "ON"
       }
     }
   ],
@@ -66,7 +67,7 @@
       "name": "release",
       "configurePreset": "release"
     },
-        {
+    {
       "name": "debug",
       "configurePreset": "debug"
     }
