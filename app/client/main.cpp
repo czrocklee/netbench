@@ -58,13 +58,22 @@ int main(int argc, char** argv)
 
   auto ss = std::deque<sender>{};
 
-  for (auto i = 0; i < senders; ++i) { ss.emplace_back(i, conns, msg_size, msgs_per_sec / senders); }
+  for (auto i = 0; i < senders; ++i)
+  {
+    ss.emplace_back(i, conns, msg_size, msgs_per_sec / senders);
+  }
 
-  for (auto& s : ss) { s.start(host, port, bind_address, nodelay); }
+  for (auto& s : ss)
+  {
+    s.start(host, port, bind_address, nodelay);
+  }
 
   if (drain)
   {
-    for (auto& s : ss) { s.enable_drain(); }
+    for (auto& s : ss)
+    {
+      s.enable_drain();
+    }
   }
 
   auto collect_metric = [&] {

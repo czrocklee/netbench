@@ -12,13 +12,12 @@ AllowAllParametersOfDeclarationOnNextLine: false
 AllowShortBlocksOnASingleLine: true
 AllowShortCaseLabelsOnASingleLine: true
 AllowShortFunctionsOnASingleLine: InlineOnly
-AllowShortIfStatementsOnASingleLine: OnlyFirstIf
-AllowShortLoopsOnASingleLine: true
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
 AllowShortEnumsOnASingleLine: true
 AlwaysBreakAfterDefinitionReturnType: None 
 AlwaysBreakAfterReturnType: None 
 AlwaysBreakBeforeMultilineStrings: false
-AlwaysBreakTemplateDeclarations: Yes
 BinPackArguments: false
 BinPackParameters: false
 BraceWrapping:   
@@ -47,6 +46,7 @@ BreakBeforeTernaryOperators: true
 BreakConstructorInitializers: BeforeColon
 BreakAfterJavaFieldAnnotations: false
 BreakStringLiterals: true
+BreakTemplateDeclarations: Leave
 ColumnLimit:     120
 CommentPragmas:  '^ IWYU pragma:'
 CompactNamespaces: false

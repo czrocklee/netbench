@@ -19,13 +19,16 @@
 int parse_host_port(char const* input, char* host, size_t hostlen, int* port)
 {
   char const* colon = strchr(input, ':');
-  if (!colon) return -1;
+  if (!colon)
+    return -1;
   size_t hlen = colon - input;
-  if (hlen >= hostlen) return -1;
+  if (hlen >= hostlen)
+    return -1;
   strncpy(host, input, hlen);
   host[hlen] = 0;
   *port = atoi(colon + 1);
-  if (*port <= 0 || *port > 65535) return -1;
+  if (*port <= 0 || *port > 65535)
+    return -1;
   return 0;
 }
 
@@ -91,7 +94,7 @@ int main(int argc, char* argv[])
 
   // Prepare buffer to send
   char* buffer = malloc(msg_size);
-  
+
   if (!buffer)
   {
     fprintf(stderr, "Failed to allocate buffer of size %zu\n", msg_size);
@@ -149,12 +152,18 @@ int main(int argc, char* argv[])
 
         if (serr->ee_origin == SO_EE_ORIGIN_ZEROCOPY)
         {
-          if (serr->ee_code == 0) { printf("Zero-copy send completed successfully.\n"); }
+          if (serr->ee_code == 0)
+          {
+            printf("Zero-copy send completed successfully.\n");
+          }
           else if (serr->ee_code == SO_EE_CODE_ZEROCOPY_COPIED)
           {
             printf("Send was COPIED (fallback), not zero-copy.\n");
           }
-          else { printf("Zero-copy send completed with ee_code=%u, ee_errno=%u\n", serr->ee_code, serr->ee_errno); }
+          else
+          {
+            printf("Zero-copy send completed with ee_code=%u, ee_errno=%u\n", serr->ee_code, serr->ee_errno);
+          }
           got_zerocopy = 1;
         }
       }

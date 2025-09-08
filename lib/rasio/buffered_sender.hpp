@@ -37,7 +37,10 @@ namespace rasio
       {
         bytes_sent = sock_.get().write_some(asio::buffer(data, size));
 
-        if (bytes_sent == size) { return; }
+        if (bytes_sent == size)
+        {
+          return;
+        }
       }
 
       auto bytes_remain = size - bytes_sent;
@@ -50,7 +53,10 @@ namespace rasio
       auto const* data_ptr = static_cast<std::byte const*>(data);
       write_list_.insert(write_list_.end(), data_ptr + bytes_sent, data_ptr + size);
 
-      if (is_empty) { handle_write(); }
+      if (is_empty)
+      {
+        handle_write();
+      }
     }
 
     [[nodiscard]] socket& get_socket() noexcept { return sock_.get(); }
@@ -59,7 +65,8 @@ namespace rasio
   private:
     void handle_write()
     {
-      if (write_list_.empty()) return;
+      if (write_list_.empty())
+        return;
 
       auto const array_one = write_list_.array_one();
       auto const array_two = write_list_.array_two();
@@ -70,9 +77,13 @@ namespace rasio
         if (!ec)
         {
           write_list_.erase_begin(bytes_transferred);
-          if (!write_list_.empty()) handle_write();
+          if (!write_list_.empty())
+            handle_write();
         }
-        else { std::cerr << "Error during write: " << ec.message() << std::endl; }
+        else
+        {
+          std::cerr << "Error during write: " << ec.message() << std::endl;
+        }
       });
     }
 

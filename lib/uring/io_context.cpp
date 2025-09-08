@@ -25,7 +25,10 @@ namespace uring
 
   io_context::~io_context()
   {
-    if (wakeup_fd_ != -1) { ::close(wakeup_fd_); }
+    if (wakeup_fd_ != -1)
+    {
+      ::close(wakeup_fd_);
+    }
 
     io_uring_queue_exit(&ring_);
   }
@@ -42,7 +45,10 @@ namespace uring
     if (int ret = io_uring_submit(&ring_); ret < 0)
     {
       // EINTR is a recoverable error, we can just try again on the next poll.
-      if (-ret == EINTR) return;
+      if (-ret == EINTR)
+      {
+        return;
+      }
 
       throw std::system_error{-ret, std::system_category(), "io_uring_submit failed"};
     }
@@ -51,9 +57,15 @@ namespace uring
 
     auto count = ::io_uring_peek_batch_cqe(&ring_, cqes, 16);
 
-    if (count == 0) { return; }
+    if (count == 0)
+    {
+      return;
+    }
 
-    for (unsigned i = 0; i < count; ++i) { process_cqe(cqes[i]); }
+    for (unsigned i = 0; i < count; ++i)
+    {
+      process_cqe(cqes[i]);
+    }
 
     ::io_uring_cq_advance(&ring_, count);
   }
@@ -65,11 +77,17 @@ namespace uring
     if (int ret = io_uring_submit_and_wait(&ring_, 1); ret < 0)
     {
       // EINTR is a recoverable error, we can just try again on the next poll.
-      if (-ret == EINTR) return;
+      if (-ret == EINTR)
+      {
+        return;
+      }
 
       throw std::system_error{-ret, std::system_category(), "io_uring_submit failed"};
     }
-    else { LOG_TRACE("io_uring_submit_and_wait returned, start processing: fd={}, submitted={}", ring_.ring_fd, ret); }
+    else
+    {
+      LOG_TRACE("io_uring_submit_and_wait returned, start processing: fd={}, submitted={}", ring_.ring_fd, ret);
+    }
 
     ::io_uring_cqe* cqe;
     unsigned head;
@@ -106,41 +124,59 @@ namespace uring
       io_context& ctx_;
     };
 
-    if (fd < 0) { throw std::invalid_argument("Invalid file descriptor for file_handle"); }
+    if (fd < 0)
+    {
+      throw std::invalid_argument("Invalid file descriptor for file_handle");
+    }
 
-    if (!fixed_file_table_.has_value()) { fixed_file_table_.emplace<fixed_file_table>(*this); }
+    if (!fixed_file_table_.has_value())
+    {
+      fixed_file_table_.emplace<fixed_file_table>(*this);
+    }
 
     return file_handle{fd, fd < max_fixed_file_array_size ? this : nullptr};
   }
 
   void io_context::init_buffer_pool(std::size_t buf_size, std::uint16_t buf_cnt)
   {
-    if (buf_pool_) { throw std::runtime_error("Buffer pool is already initialized"); }
+    if (buf_pool_)
+    {
+      throw std::runtime_error("Buffer pool is already initialized");
+    }
 
     buf_pool_ = std::make_unique<registered_buffer_pool>(*this, buf_size, buf_cnt);
   }
 
-  ::io_uring_sqe& io_context::create_request(request_handle& handle, completion_handler_type handler, void* context)
+  ::io_uring_sqe& io_context::create_request(request_handle& handle, void* context, completion_handler_type handler)
   {
     ::io_uring_sqe* sqe = nullptr;
 
-    while ((sqe = io_uring_get_sqe(&ring_)) == nullptr) { io_uring_submit(&ring_); }
+    while ((sqe = io_uring_get_sqe(&ring_)) == nullptr)
+    {
+      io_uring_submit(&ring_);
+    }
 
-    req_data data{.completion_handler = handler, .completion_context = context};
+    req_data data{.completion_context = context, .completion_handler = handler};
 
-    if (!handle.is_valid() || handle.io_ctx_ != this) { handle = new_request(data); }
-    else { *handle.data_iter_ = data; }
+    if (!handle.is_valid() || handle.io_ctx_ != this)
+    {
+      handle = new_request(data);
+    }
+    else
+    {
+      *handle.data_iter_ = data;
+    }
 
     ::io_uring_sqe_set_data(sqe, std::addressof(*handle.data_iter_));
 
     return *sqe;
   }
 
-  void io_context::prepare_request(request_handle& handle, prepare_handler_type handler, void* context)
+  void io_context::prepare_request(request_handle& handle, void* context, prepare_handler_type handler)
   {
     if (!handle.is_valid() || handle.io_ctx_ != this)
     {
-      handle = new_request(req_data{.prepare_handler = handler, .prepare_context = context});
+      handle = new_request(req_data{.prepare_context = context, .prepare_handler = handler});
     }
     else
     {
@@ -161,7 +197,10 @@ namespace uring
       iter = active_data_list_.begin();
       *iter = data;
     }
-    else { iter = active_data_list_.emplace(active_data_list_.begin(), data); }
+    else
+    {
+      iter = active_data_list_.emplace(active_data_list_.begin(), data);
+    }
 
     return request_handle{*this, iter};
   }
@@ -182,7 +221,10 @@ namespace uring
         {
           ::io_uring_sqe* sqe = nullptr;
 
-          while ((sqe = io_uring_get_sqe(&ring_)) == nullptr) { io_uring_submit(&ring_); }
+          while ((sqe = io_uring_get_sqe(&ring_)) == nullptr)
+          {
+            io_uring_submit(&ring_);
+          }
 
           ::io_uring_sqe_set_data(sqe, req);
           LOG_TRACE(
@@ -245,14 +287,13 @@ namespace uring
   void io_context::rearm_wakeup_event()
   {
     wakeup_handle_ = std::make_unique<request_handle>();
-    auto& sqe = create_request(*wakeup_handle_, on_wakeup, this);
+    auto& sqe = create_request(
+      *wakeup_handle_, this, [](auto const& cqe, void* context) { static_cast<io_context*>(context)->on_wakeup(cqe); });
     ::io_uring_prep_read(&sqe, wakeup_fd_, &wakeup_buffer_, sizeof(wakeup_buffer_), 0);
   }
 
-  void io_context::on_wakeup(::io_uring_cqe const& cqe, void* context)
+  void io_context::on_wakeup(::io_uring_cqe const& cqe)
   {
-    auto& self = *static_cast<io_context*>(context);
-
     if (cqe.res < 0)
     {
       // This is a critical error, likely during shutdown.
@@ -260,28 +301,29 @@ namespace uring
       return;
     }
     // The read is complete, so we re-arm it for the next wakeup call.
-    self.rearm_wakeup_event();
+    rearm_wakeup_event();
   }
 
   void io_context::wakeup()
   {
-    if (std::uint64_t val = 1; ::write(wakeup_fd_, &val, sizeof(val)) < 0) { perror("write to eventfd failed"); }
+    if (std::uint64_t val = 1; ::write(wakeup_fd_, &val, sizeof(val)) < 0)
+    {
+      perror("write to eventfd failed");
+    }
   }
 
   void io_context::process_cqe(::io_uring_cqe* cqe)
   {
     auto* data = reinterpret_cast<req_data*>(::io_uring_cqe_get_data(cqe));
 
-    /*    LOG_TRACE(
-         "Processing cqe: res={}, flags={}, data={}, handler={}, context={}",
-         cqe->res,
-         cqe->flags,
-         (void*)data,
-         data ? data->completion_handler : nullptr,
-         data ? data->completion_context : nullptr); */
-
-    if (data->completion_handler != nullptr) { data->completion_handler(*cqe, data->completion_context); }
-    else { LOG_TRACE("No completion handler set for this cqe"); }
+    if (data->completion_handler != nullptr)
+    {
+      data->completion_handler(*cqe, data->completion_context);
+    }
+    else
+    {
+      LOG_TRACE("No completion handler set for this cqe");
+    }
   }
 
   io_context::request_handle::request_handle(io_context& io_ctx, data_node_iter data_iter)
@@ -291,7 +333,10 @@ namespace uring
 
   io_context::request_handle::~request_handle()
   {
-    if (io_ctx_ != nullptr) { io_ctx_->free_request(*this); }
+    if (io_ctx_ != nullptr)
+    {
+      io_ctx_->free_request(*this);
+    }
   }
 
   io_context::request_handle::request_handle(request_handle&& other) noexcept
@@ -305,7 +350,10 @@ namespace uring
   {
     if (this != &other)
     {
-      if (io_ctx_ != nullptr) { io_ctx_->free_request(*this); }
+      if (io_ctx_ != nullptr)
+      {
+        io_ctx_->free_request(*this);
+      }
 
       io_ctx_ = other.io_ctx_;
       data_iter_ = other.data_iter_;
@@ -316,11 +364,11 @@ namespace uring
     return *this;
   }
 
-  void io_context::request_handle::set_completion_handler(completion_handler_type handler, void* context) noexcept
+  void io_context::request_handle::set_completion_handler(void* context, completion_handler_type handler) noexcept
   {
     assert(is_valid() && "Cannot set handler on an invalid request_handle");
-    data_iter_->completion_handler = handler;
     data_iter_->completion_context = context;
+    data_iter_->completion_handler = handler;
   }
 
   io_context::file_handle::file_handle(int fd) : file_handle{fd, nullptr}
@@ -329,7 +377,10 @@ namespace uring
 
   void io_context::file_handle::update_sqe_flag(::io_uring_sqe& sqe) const noexcept
   {
-    if (has_fixed()) { sqe.flags |= IOSQE_FIXED_FILE; }
+    if (has_fixed())
+    {
+      sqe.flags |= IOSQE_FIXED_FILE;
+    }
   }
 
   io_context::file_handle::file_handle(int fd, io_context* io_ctx) : fd_{fd}, io_ctx_{io_ctx}

@@ -176,7 +176,10 @@ int main(int argc, char** argv)
 
     std::cout << "\nShutting down..." << std::endl;
 
-    for (auto& worker : workers) { worker->stop(); }
+    for (auto& worker : workers)
+    {
+      worker->stop();
+    }
   }
   catch (std::exception const& e)
   {

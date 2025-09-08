@@ -44,7 +44,10 @@ namespace rasio
         asio::buffer(buffer_), make_custom_alloc_handler(handler_memory_, [this](std::error_code ec, std::size_t n) {
           data_cb_(ec, ::asio::const_buffer{buffer_.data(), n});
 
-          if (!ec) { do_read(); }
+          if (!ec)
+          {
+            do_read();
+          }
         }));
     }
 

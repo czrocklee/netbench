@@ -3,7 +3,6 @@
 #include <asio/buffer.hpp>
 #include <cstdint>
 
-
 struct metadata
 {
   std::uint64_t msg_size;

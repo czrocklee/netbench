@@ -31,7 +31,10 @@ namespace bsd
   {
     auto& self = *static_cast<acceptor*>(context);
 
-    if (events & EPOLLIN) { self.handle_accept(); }
+    if (events & EPOLLIN)
+    {
+      self.handle_accept();
+    }
   }
 
   void acceptor::handle_accept()

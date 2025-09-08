@@ -89,7 +89,10 @@ void worker::on_data(connection& conn, ::asio::const_buffer const data)
       std::terminate();
     }
   }
-  else { conn.send(data, 0); }
+  else
+  {
+    conn.send(data, 0);
+  }
 }
 
 void worker::run(std::atomic<bool>& stop_flag)
@@ -100,10 +103,16 @@ void worker::run(std::atomic<bool>& stop_flag)
   {
 #ifdef ASIO_API
     auto work_guard_ = ::asio::make_work_guard(io_ctx_);
-    while (!stop_flag.load(std::memory_order::relaxed)) { io_ctx_.poll(); }
+    while (!stop_flag.load(std::memory_order::relaxed))
+    {
+      io_ctx_.poll();
+    }
 
 #else
-    while (!stop_flag.load(std::memory_order::relaxed)) { io_ctx_.poll(); }
+    while (!stop_flag.load(std::memory_order::relaxed))
+    {
+      io_ctx_.poll();
+    }
 #endif
   }
   catch (std::exception const& e)

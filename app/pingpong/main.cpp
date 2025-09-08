@@ -73,7 +73,7 @@ int main(int argc, char** argv)
     io_uring_params params{};
     params.flags |= IORING_SETUP_SQPOLL;
     params.flags |= IORING_SETUP_SINGLE_ISSUER;
-    //params.flags |= (IORING_SETUP_COOP_TASKRUN); //| IORING_SETUP_TASKRUN_FLAG);
+    // params.flags |= (IORING_SETUP_COOP_TASKRUN); //| IORING_SETUP_TASKRUN_FLAG);
 
     if (sqpoll_cpu_affinity >= 0)
     {

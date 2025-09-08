@@ -5,8 +5,7 @@
 namespace bsd
 {
 
-  receiver::receiver(io_context& io_ctx, std::size_t buffer_size)
-    : io_ctx_{io_ctx}
+  receiver::receiver(io_context& io_ctx, std::size_t buffer_size) : io_ctx_{io_ctx}
   {
     buffer_.resize(buffer_size);
   }

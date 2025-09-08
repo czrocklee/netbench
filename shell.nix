@@ -60,11 +60,18 @@ in
     name = "cpp-dev-env";
 
     buildInputs = with pkgs; [
+      # build tools
       cmake
       pkg-config
       ninja
       gcc
       gdb
+
+      # tooling
+      bmon
+      clang-tools
+
+      # dependencies
       boost.dev
       mimalloc
       cli11

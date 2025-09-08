@@ -26,7 +26,8 @@ namespace bsd
     {
       bytes_sent = get_socket().send(data, size, MSG_DONTWAIT | MSG_NOSIGNAL);
 
-      if (bytes_sent == size) return;
+      if (bytes_sent == size)
+        return;
     }
 
     auto bytes_remain = size - bytes_sent;
@@ -51,7 +52,10 @@ namespace bsd
   {
     auto& self = *static_cast<buffered_sender*>(context);
 
-    if (events & EPOLLOUT) { self.handle_write(); }
+    if (events & EPOLLOUT)
+    {
+      self.handle_write();
+    }
   }
 
   void buffered_sender::handle_write()
@@ -71,7 +75,10 @@ namespace bsd
             write_list_.clear();
             write_event_.reset();
           }
-          else { write_list_.erase_begin(bytes_sent); }
+          else
+          {
+            write_list_.erase_begin(bytes_sent);
+          }
         }
       }
       catch (std::system_error const& e)

@@ -67,7 +67,6 @@ namespace uring
     state state_ = state::idle;
     flags flags_ = flags::none;
     int send_error_ = 0;
-    int pending_zf_notify_ = 0;
     boost::circular_buffer<buffer_data> write_list_;
     std::size_t active_index_ = 0;
     ::io_uring_sqe* last_send_sqe_ = nullptr;
@@ -76,7 +75,10 @@ namespace uring
   template<typename F>
   void sender::send(std::size_t size, F&& f)
   {
-    if (send_error_ > 0) { throw std::runtime_error("send failed: " + std::string(strerror(send_error_))); }
+    if (send_error_ > 0)
+    {
+      throw std::runtime_error("send failed: " + std::string(strerror(send_error_)));
+    }
 
     append_write_list(size, std::forward<F>(f));
 

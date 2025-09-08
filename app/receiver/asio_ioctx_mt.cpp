@@ -19,7 +19,10 @@ using net = rasio::tcp;
 
 std::atomic<bool> shutdown_flag = false;
 
-void signal_handler(int /* signum */) { shutdown_flag = true; }
+void signal_handler(int /* signum */)
+{
+  shutdown_flag = true;
+}
 
 namespace
 {

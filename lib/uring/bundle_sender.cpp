@@ -26,11 +26,17 @@ namespace uring
 
     // std::cout << "sending buffer " << buf_id_head_.value() << std::endl;
 
-    if (++buf_id_head_ == buf_pool_.get_buffer_count()) { buf_id_head_ = buffer_id_type{0}; }
+    if (++buf_id_head_ == buf_pool_.get_buffer_count())
+    {
+      buf_id_head_ = buffer_id_type{0};
+    }
 
     is_buffer_full_ = (buf_id_head_ == buf_id_tail_);
 
-    if (state_ == state::idle || state_ == state::fastpath_sending) { start_bundle_send_operation(); }
+    if (state_ == state::idle || state_ == state::fastpath_sending)
+    {
+      start_bundle_send_operation();
+    }
   }
 
   void bundle_sender::on_bundle_send_completion(::io_uring_cqe const& cqe, void* context)
@@ -83,7 +89,10 @@ namespace uring
       return;
     }
 
-    if (cqe.res > 0) { self.consume_buffer(cqe.res, cqe.flags); }
+    if (cqe.res > 0)
+    {
+      self.consume_buffer(cqe.res, cqe.flags);
+    }
   }
 
   void bundle_sender::enable_fixed_buffer_fastpath(registered_buffer_pool& reg_buf_pool)
@@ -96,8 +105,7 @@ namespace uring
     state_ = state::fastpath;
 
     auto const& file_handle = get_socket().get_file_handle();
-    auto& sqe = io_ctx_.create_request(
-      fixed_buf_data_->send_handle, on_fixed_buffer_send_completion, this);
+    auto& sqe = io_ctx_.create_request(fixed_buf_data_->send_handle, this, on_fixed_buffer_send_completion);
     file_handle.update_sqe_flag(sqe);
     sqe.ioprio |= IORING_SEND_ZC_REPORT_USAGE;
     ::io_uring_prep_send_zc_fixed(
@@ -141,8 +149,14 @@ namespace uring
       assert(cqe.res == self.fixed_buf_data_->buf.size());
 
       // fast path confirmed, start bundle send operation if there are buffers to send
-      if (self.buf_id_head_ != self.buf_id_tail_ || self.is_buffer_full_) { self.start_bundle_send_operation(); }
-      else { self.state_ = state::fastpath_sending; }
+      if (self.buf_id_head_ != self.buf_id_tail_ || self.is_buffer_full_)
+      {
+        self.start_bundle_send_operation();
+      }
+      else
+      {
+        self.state_ = state::fastpath_sending;
+      }
       /*       else
             {
               // std::cout << "Fast path send completed successfully." << std::endl;
@@ -162,26 +176,30 @@ namespace uring
       {
         state_ = state::retrying;
         auto const& file_handle = get_socket().get_file_handle();
-        auto& sqe =
-          io_ctx_.create_request(send_handle_, on_retry_send_completion, this);
+        auto& sqe = io_ctx_.create_request(send_handle_, this, on_retry_send_completion);
         file_handle.update_sqe_flag(sqe);
         ::io_uring_prep_send(
-          &sqe,
-          file_handle.get_fd(),
-          static_cast<std::byte const*>(cur_buf.data()) + bytes,
-          cur_buf.size() - bytes,
-          0);
+          &sqe, file_handle.get_fd(), static_cast<std::byte const*>(cur_buf.data()) + bytes, cur_buf.size() - bytes, 0);
         break;
       }
 
       bytes -= cur_buf.size();
       // std::cout << "consuming buffer " << buf_id_tail_.value() << std::endl;
 
-      if (++buf_id_tail_ == buf_pool_.get_buffer_count()) { buf_id_tail_ = buffer_id_type{0}; }
+      if (++buf_id_tail_ == buf_pool_.get_buffer_count())
+      {
+        buf_id_tail_ = buffer_id_type{0};
+      }
     }
 
-    if (buf_id_head_ == buf_id_tail_) { state_ = state::idle; }
-    else if (!(flags & IORING_CQE_F_MORE)) { start_bundle_send_operation(); }
+    if (buf_id_head_ == buf_id_tail_)
+    {
+      state_ = state::idle;
+    }
+    else if (!(flags & IORING_CQE_F_MORE))
+    {
+      start_bundle_send_operation();
+    }
     else { /*std::cout << "more completion comming" << std::endl;*/ }
   }
 
@@ -191,7 +209,7 @@ namespace uring
     // std::endl;
     state_ = state::sending;
     auto const& file_handle = get_socket().get_file_handle();
-    auto& sqe = io_ctx_.create_request(send_handle_, on_bundle_send_completion, this);
+    auto& sqe = io_ctx_.create_request(send_handle_, this, on_bundle_send_completion);
     file_handle.update_sqe_flag(sqe);
     ::io_uring_prep_send_bundle(&sqe, file_handle.get_fd(), 0, 0);
     sqe.buf_group = buf_pool_.get_group_id();

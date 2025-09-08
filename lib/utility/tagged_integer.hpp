@@ -17,8 +17,12 @@ namespace utility
     constexpr T value() const noexcept { return value_; }
     static constexpr tagged_integer invalid() noexcept { return {}; }
     constexpr bool is_valid() const noexcept { return value_ != Default; }
+
     template<typename U>
-    static tagged_integer cast_from(U u) { return tagged_integer{static_cast<T>(u)}; }
+    static tagged_integer cast_from(U u)
+    {
+      return tagged_integer{static_cast<T>(u)};
+    }
 
     // clang-format off
     constexpr tagged_integer& operator++() noexcept { ++value_; return *this; }

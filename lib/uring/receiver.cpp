@@ -24,46 +24,58 @@ namespace uring
     new_multishot_recv_op();
   }
 
-  void receiver::on_multishot_recv(::io_uring_cqe const& cqe, void* context)
+  void receiver::on_multishot_recv(::io_uring_cqe const& cqe)
   {
-    auto& self = *reinterpret_cast<receiver*>(context);
-
     if (cqe.res <= 0)
     {
       if (cqe.res == -ENOBUFS)
       {
         // Handle the case where no buffers are available
         // std::cerr << "No buffers available for receiving data. fd=" << self.sock_.get_fd() << std::endl;
-        if (!(cqe.flags & IORING_CQE_F_MORE)) { self.new_multishot_recv_op(); }
+        if (!(cqe.flags & IORING_CQE_F_MORE))
+        {
+          new_multishot_recv_op();
+        }
+
         return;
       }
 
-      if (cqe.res < 0) { self.data_cb_(std::make_error_code(static_cast<std::errc>(-cqe.res)), {}); }
-      else { self.data_cb_(::asio::error::make_error_code(::asio::error::eof), {}); }
+      if (cqe.res < 0)
+      {
+        data_cb_(std::make_error_code(static_cast<std::errc>(-cqe.res)), {});
+      }
+      else
+      {
+        data_cb_(::asio::error::make_error_code(::asio::error::eof), {});
+      }
+
       return;
     }
 
     using buffer_id_type = provided_buffer_pool::buffer_id_type;
     std::size_t bytes_received = static_cast<std::size_t>(cqe.res);
     auto buf_id = buffer_id_type{static_cast<buffer_id_type::value_type>(cqe.flags >> IORING_CQE_BUFFER_SHIFT)};
-    std::byte* buffer = self.buffer_pool_.get_buffer_address(buf_id);
+    std::byte* buffer = buffer_pool_.get_buffer_address(buf_id);
 
-    self.data_cb_({}, ::asio::const_buffer{buffer, bytes_received});
+    data_cb_({}, ::asio::const_buffer{buffer, bytes_received});
 
-    self.buffer_pool_.push_buffer(buf_id);
+    buffer_pool_.push_buffer(buf_id);
 
-    if (!(cqe.flags & IORING_CQE_F_MORE)) { self.new_multishot_recv_op(); }
+    if (!(cqe.flags & IORING_CQE_F_MORE))
+    {
+      new_multishot_recv_op();
+    }
   }
 
   void receiver::new_multishot_recv_op()
   {
     auto const& file_handle = sock_.get_file_handle();
-    auto& sqe = io_ctx_.create_request(recv_handle_, on_multishot_recv, this);
+    auto& sqe = io_ctx_.create_request(
+      recv_handle_, this, [](auto const& cqe, void* ctxt) { static_cast<receiver*>(ctxt)->on_multishot_recv(cqe); });
     file_handle.update_sqe_flag(sqe);
     ::io_uring_prep_recv_multishot(&sqe, file_handle.get_fd(), nullptr, 0, 0);
     sqe.flags |= IOSQE_BUFFER_SELECT;
     sqe.buf_group = buffer_pool_.get_group_id();
-    std::cout << "Created recv operation: " << sqe.user_data << std::endl;
   }
 
 } // namespace uring

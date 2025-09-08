@@ -17,21 +17,24 @@ int main()
 {
   struct timespec start, end;
   uint64_t tsc_start, tsc_end;
-  volatile int dummy = 0;
+  int volatile dummy = 0;
 
   // Warm up
-  for (int i = 0; i < 1000; ++i) getpid();
+  for (int i = 0; i < 1000; ++i)
+    getpid();
 
   // Measure getpid syscall overhead (wall clock)
   clock_gettime(CLOCK_MONOTONIC, &start);
-  for (int i = 0; i < N; ++i) dummy += getpid();
+  for (int i = 0; i < N; ++i)
+    dummy += getpid();
   clock_gettime(CLOCK_MONOTONIC, &end);
   double elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
   printf("getpid() x %d: %.3f ms, %.1f ns/call\n", N, elapsed * 1000, elapsed * 1e9 / N);
 
   // Measure getpid syscall overhead (TSC)
   tsc_start = rdtsc();
-  for (int i = 0; i < N; ++i) dummy += getpid();
+  for (int i = 0; i < N; ++i)
+    dummy += getpid();
   tsc_end = rdtsc();
   printf(
     "getpid() x %d: %lu cycles total, %.1f cycles/call\n", N, tsc_end - tsc_start, (double)(tsc_end - tsc_start) / N);

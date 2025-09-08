@@ -41,7 +41,6 @@ namespace bsd
     std::size_t send(void const* data, std::size_t size, int flags);
     std::size_t send(::iovec const* iov, std::size_t iovcnt, int flags);
 
-
     template<typename T>
     void set_option(int level, int optname, T const& optval)
     {

@@ -8,16 +8,25 @@ namespace bsd
   {
     epoll_fd_ = epoll_create1(0);
 
-    if (epoll_fd_ == -1) { throw std::system_error(errno, std::system_category(), "epoll_create1 failed"); }
+    if (epoll_fd_ == -1)
+    {
+      throw std::system_error(errno, std::system_category(), "epoll_create1 failed");
+    }
 
     setup_wakeup_event();
   }
 
   io_context::~io_context()
   {
-    if (wakeup_fd_ != -1) { ::close(wakeup_fd_); }
+    if (wakeup_fd_ != -1)
+    {
+      ::close(wakeup_fd_);
+    }
 
-    if (epoll_fd_ != -1) { ::close(epoll_fd_); }
+    if (epoll_fd_ != -1)
+    {
+      ::close(epoll_fd_);
+    }
   }
 
   io_context::event_handle io_context::register_event(int fd, std::uint32_t events, handler_type handler, void* context)
@@ -76,7 +85,10 @@ namespace bsd
   {
     wakeup_fd_ = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
 
-    if (wakeup_fd_ < 0) { throw std::system_error(errno, std::system_category(), "eventfd failed"); }
+    if (wakeup_fd_ < 0)
+    {
+      throw std::system_error(errno, std::system_category(), "eventfd failed");
+    }
     // Use a raw `this` pointer as a special value to identify the wakeup event.
     // add(wakeup_fd_, EPOLLIN, reinterpret_cast<event_data*>(this));
     if (::epoll_event ev{.events = EPOLLIN, .data = {.ptr = this}};
@@ -116,7 +128,10 @@ namespace bsd
 
     if (num_events == -1)
     {
-      if (errno == EINTR) { return; } // Interrupted by a signal, safe to continue.
+      if (errno == EINTR)
+      {
+        return;
+      } // Interrupted by a signal, safe to continue.
 
       throw std::system_error(errno, std::system_category(), "epoll_wait failed");
     }
@@ -133,7 +148,10 @@ namespace bsd
 
       for (auto& event : *events)
       {
-        if (event.handler != nullptr) [[likely]] { event.handler(events_[i].events, event.context); }
+        if (event.handler != nullptr) [[likely]]
+        {
+          event.handler(events_[i].events, event.context);
+        }
       }
     }
   }

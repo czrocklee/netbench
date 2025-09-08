@@ -40,10 +40,9 @@ namespace uring
 
   void sender::prepare_send_operation()
   {
-    io_ctx_.prepare_request(
-      send_handle_,
-      [](::io_uring_sqe& sqe, void* context) { static_cast<sender*>(context)->on_submit_send_operation(sqe); },
-      this);
+    io_ctx_.prepare_request(send_handle_, this, [](::io_uring_sqe& sqe, void* context) {
+      static_cast<sender*>(context)->on_submit_send_operation(sqe);
+    });
     state_ = state::open;
   }
 
@@ -59,20 +58,17 @@ namespace uring
     {
       LOG_DEBUG("starting zerocopy send operation: size={}, index={}", data.size, active_index_);
       send_handle_.set_completion_handler(
-        [](::io_uring_cqe const& cqe, void* context) { static_cast<sender*>(context)->on_zc_send_completion(cqe); },
-        this);
+        this, [](auto const& cqe, void* ctxt) { static_cast<sender*>(ctxt)->on_zc_send_completion(cqe); });
 
       ::io_uring_prep_send_zc_fixed(&sqe, file.get_fd(), buf.data(), data.size, 0, 0, data.index.value());
       sqe.ioprio |= IORING_SEND_ZC_REPORT_USAGE;
-      ++data.pending_zf_notify;
-      ++pending_zf_notify_;
       last_send_sqe_ = &sqe;
     }
     else
     {
       LOG_DEBUG("starting regular send operation: size={}, index={}", data.size, active_index_);
       send_handle_.set_completion_handler(
-        [](::io_uring_cqe const& cqe, void* context) { static_cast<sender*>(context)->on_send_completion(cqe); }, this);
+        this, [](auto const& cqe, void* ctxt) { static_cast<sender*>(ctxt)->on_send_completion(cqe); });
       ::io_uring_prep_write_fixed(&sqe, file.get_fd(), buf.data(), data.size, 0, data.index.value());
       /*       ::io_uring_prep_send(&sqe, file.get_fd(), buf.data(), data.size, 0);
             sqe.ioprio |= IORING_RECVSEND_FIXED_BUF;
@@ -187,20 +183,26 @@ namespace uring
   {
     // std::cout << "notify received " << active_buf_->pending_zf_notify - 1 << std::endl;
 
-    --pending_zf_notify_;
     auto& data = write_list_.front();
 
     if (--data.pending_zf_notify == 0)
     {
       buf_pool_.release_buffer(data.index);
       write_list_.pop_front();
-      
-      if (active_index_ > 0) { --active_index_; }
-      
+
+      if (active_index_ > 0)
+      {
+        --active_index_;
+      }
+
       LOG_DEBUG(
         "zerocopy send notif, front buffer cleared: err={}, front_counter={}, active_index={}, pending_zf_notify={}",
         std::strerror(-cqe.res),
-        data.pending_zf_notify,
+        std::acumulate(
+          write_list_.begin(),
+          write_list_.begin() + active_index_ + 1,
+          0,
+          [](std::size_t sum, buffer_data const& bd) { return sum + bd.pending_zf_notify; }),
         active_index_,
         pending_zf_notify_);
     }
@@ -209,7 +211,11 @@ namespace uring
       LOG_DEBUG(
         "zerocopy send notif: err={}, front_counter={}, state={}, active_index={}, pending_zf_notify={}",
         std::strerror(-cqe.res),
-        data.pending_zf_notify,
+        std::acumulate(
+          write_list_.begin(),
+          write_list_.begin() + active_index_ + 1,
+          0,
+          [](std::size_t sum, buffer_data const& bd) { return sum + bd.pending_zf_notify; }),
         magic_enum::enum_name(state_),
         active_index_,
         pending_zf_notify_);

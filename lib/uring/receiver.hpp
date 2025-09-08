@@ -25,7 +25,7 @@ namespace uring
     io_context& get_io_context() noexcept { return io_ctx_; }
 
   private:
-    static void on_multishot_recv(const ::io_uring_cqe& cqe, void* context);
+    void on_multishot_recv(::io_uring_cqe const& cqe);
     void new_multishot_recv_op();
 
     io_context& io_ctx_;

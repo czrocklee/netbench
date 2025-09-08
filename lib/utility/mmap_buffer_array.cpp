@@ -17,10 +17,16 @@ namespace utility
     ptr_ = decltype(ptr_){
       static_cast<std::byte*>(::mmap(nullptr, total_size, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0)),
       [total_size](std::byte* p) {
-        if (p && p != MAP_FAILED) { ::munmap(p, total_size); }
+        if (p && p != MAP_FAILED)
+        {
+          ::munmap(p, total_size);
+        }
       }};
 
-    if (ptr_.get() == MAP_FAILED) { throw std::runtime_error("Failed to allocate mmap buffer array"); }
+    if (ptr_.get() == MAP_FAILED)
+    {
+      throw std::runtime_error("Failed to allocate mmap buffer array");
+    }
   }
 
 } // namespace utility

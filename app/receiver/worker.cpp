@@ -23,7 +23,10 @@ worker::worker(config cfg)
 #ifdef IO_URING_API
   recv_pool_.populate_buffers();
 
-  if (config_.echo != config::echo_mode::none) { io_ctx_.init_buffer_pool(1024 * 1024 * 8, 128); }
+  if (config_.echo != config::echo_mode::none)
+  {
+    io_ctx_.init_buffer_pool(1024 * 1024 * 8, 128);
+  }
 
 #endif
 }
@@ -81,13 +84,16 @@ void worker::add_connection(net::socket sock)
     iter->partial_buffer = std::make_unique<std::byte[]>(iter->msg_size);
     iter->receiver.open(std::move(sock));
 
-    if (config_.echo != config::echo_mode::none) 
-    { 
+    if (config_.echo != config::echo_mode::none)
+    {
 #ifdef IO_URING_API
       using namespace magic_enum::bitwise_operators;
       net::sender::flags f{};
-      
-      if (config_.zerocopy) { f |= net::sender::flags::zerocopy; }
+
+      if (config_.zerocopy)
+      {
+        f |= net::sender::flags::zerocopy;
+      }
 
       iter->sender.emplace(io_ctx_, io_ctx_.get_buffer_pool(), 1024 * 1024 * 128);
       iter->sender->open(iter->receiver.get_socket(), f);
@@ -140,7 +146,8 @@ void worker::on_data(connection& conn, ::asio::const_buffer const data)
 
   if (conn.partial_buffer_size > 0)
   {
-    //std::cout << "partial buffer not empty, size: " << conn.partial_buffer_size << " data_left: " << data_left.size() << std::endl;
+    // std::cout << "partial buffer not empty, size: " << conn.partial_buffer_size << " data_left: " << data_left.size()
+    // << std::endl;
     auto addr = reinterpret_cast<std::byte const*>(data_left.data());
     auto size = std::min(conn.msg_size - conn.partial_buffer_size, data_left.size());
     std::memcpy(conn.partial_buffer.get() + conn.partial_buffer_size, addr, size);
@@ -161,7 +168,7 @@ void worker::on_data(connection& conn, ::asio::const_buffer const data)
 
     if (data_left.size() < conn.msg_size)
     {
-      //std::cout << "remaining bytes: " << data_left.size() << std::endl;
+      // std::cout << "remaining bytes: " << data_left.size() << std::endl;
       std::memcpy(conn.partial_buffer.get(), addr, data_left.size());
       conn.partial_buffer_size = data_left.size();
       break;
@@ -188,7 +195,7 @@ void worker::on_data(connection& conn, ::asio::const_buffer const data)
   ++metrics_.ops;
 }
 
-void worker::on_new_message(connection& conn,void const* buffer)
+void worker::on_new_message(connection& conn, void const* buffer)
 {
   ++metrics_.msgs;
 
@@ -212,7 +219,6 @@ void worker::on_new_message(connection& conn,void const* buffer)
                 << std::endl;
     }
   }
-
 }
 
 void worker::process_pending_tasks()
@@ -261,11 +267,17 @@ void worker::run_busy_spin()
   {
 #ifdef ASIO_API
     auto work_guard = ::asio::make_work_guard(io_ctx_);
-    while (!stop_flag_.load(std::memory_order::relaxed)) { io_ctx_.poll(); }
+    while (!stop_flag_.load(std::memory_order::relaxed))
+    {
+      io_ctx_.poll();
+    }
 #else
     while (!stop_flag_.load(std::memory_order::relaxed))
     {
-      for (auto i = 0; i < 1000; ++i) { io_ctx_.poll(); }
+      for (auto i = 0; i < 1000; ++i)
+      {
+        io_ctx_.poll();
+      }
 
       process_pending_tasks();
     }

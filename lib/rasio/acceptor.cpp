@@ -30,7 +30,10 @@ namespace rasio
     acceptor_.async_accept(make_custom_alloc_handler(handler_memory_, [this](std::error_code ec, socket sock) {
       accept_cb_(ec, std::move(sock));
 
-      if (!ec) { do_accept(); }
+      if (!ec)
+      {
+        do_accept();
+      }
     }));
   }
 } // namespace rasio

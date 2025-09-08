@@ -40,22 +40,22 @@ namespace uring
     class request_handle;
     using completion_handler_type = void (*)(::io_uring_cqe const&, void* context);
     [[nodiscard]] ::io_uring_sqe&
-      create_request(request_handle& handle, completion_handler_type handler, void* context);
+      create_request(request_handle& handle, void* context, completion_handler_type handler);
 
     using prepare_handler_type = void (*)(::io_uring_sqe&, void* context);
-    void prepare_request(request_handle& handle, prepare_handler_type handler, void* context);
+    void prepare_request(request_handle& handle, void* context, prepare_handler_type handler);
 
   private:
     struct req_data
     {
-      prepare_handler_type prepare_handler = nullptr;
       void* prepare_context = nullptr;
-      completion_handler_type completion_handler = nullptr;
+      prepare_handler_type prepare_handler = nullptr;
       void* completion_context = nullptr;
+      completion_handler_type completion_handler = nullptr;
     };
 
     void init(unsigned entries, ::io_uring_params& params);
-    static void on_wakeup(::io_uring_cqe const& cqe, void* context);
+    void on_wakeup(::io_uring_cqe const& cqe);
     void rearm_wakeup_event();
     void run_for_impl(__kernel_timespec const* ts);
     void process_cqe(::io_uring_cqe* cqe);
@@ -104,7 +104,7 @@ namespace uring
     request_handle(request_handle&& other) noexcept;
     request_handle& operator=(request_handle&& other) noexcept;
 
-    void set_completion_handler(completion_handler_type handler, void* context) noexcept;
+    void set_completion_handler(void* context, completion_handler_type handler) noexcept;
     bool is_valid() const noexcept { return io_ctx_ != nullptr; }
 
   private:

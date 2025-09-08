@@ -84,8 +84,12 @@ inline void log_stderr(std::format_string<Args...> fmt, Args&&... args)
 
 // Macro to reduce duplication for log level checks
 #define LOG_LEVEL_MACRO(LOGLEVEL, PREFIX, ...)                                                                         \
-  do {                                                                                                                 \
-    if ((LOGLEVEL) >= utility::min_log_level.load(std::memory_order_relaxed)) { log_stderr(PREFIX __VA_ARGS__); }      \
+  do                                                                                                                   \
+  {                                                                                                                    \
+    if ((LOGLEVEL) >= utility::min_log_level.load(std::memory_order_relaxed))                                          \
+    {                                                                                                                  \
+      log_stderr(PREFIX __VA_ARGS__);                                                                                  \
+    }                                                                                                                  \
   } while (0)
 
 #define LOG_TRACE(...) LOG_LEVEL_MACRO(::utility::log_level::trace, "[TRACE] ", __VA_ARGS__)

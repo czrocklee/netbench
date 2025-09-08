@@ -14,7 +14,7 @@ class sender
 {
 public:
   sender(int id, int conns, std::size_t msg_size, int msgs_per_sec);
-  
+
   void start(std::string const& host, std::string const& port, std::string const& bind_address, bool nodelay);
   void enable_drain();
 

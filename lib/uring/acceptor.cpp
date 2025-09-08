@@ -33,15 +33,21 @@ namespace uring
       int new_conn_fd = cqe.res;
       self->accept_cb_({}, socket{new_conn_fd});
     }
-    else { self->accept_cb_(std::make_error_code(static_cast<std::errc>(-cqe.res)), socket{}); }
+    else
+    {
+      self->accept_cb_(std::make_error_code(static_cast<std::errc>(-cqe.res)), socket{});
+    }
 
-    if (!(cqe.flags & IORING_CQE_F_MORE)) { self->new_multishot_accept_op(); }
+    if (!(cqe.flags & IORING_CQE_F_MORE))
+    {
+      self->new_multishot_accept_op();
+    }
   }
 
   void acceptor::new_multishot_accept_op()
   {
     auto const& file_handle = listen_sock_.get_file_handle();
-    auto& sqe = io_ctx_.create_request(accept_handle_, on_multishot_accept, this);
+    auto& sqe = io_ctx_.create_request(accept_handle_, this, on_multishot_accept);
     file_handle.update_sqe_flag(sqe);
     ::io_uring_prep_multishot_accept(&sqe, file_handle.get_fd(), nullptr, nullptr, 0);
   }

@@ -14,7 +14,6 @@ namespace uring
 
   bundle_receiver::~bundle_receiver()
   {
-
   }
 
   void bundle_receiver::open(socket sock)
@@ -39,7 +38,10 @@ namespace uring
       {
         // Handle the case where no buffers are available
         // std::cerr << "No buffers available for receiving data. fd=" << self.sock_.get_fd() << std::endl;
-        if (!(cqe.flags & IORING_CQE_F_MORE)) { self.new_bundle_recv_op(); }
+        if (!(cqe.flags & IORING_CQE_F_MORE))
+        {
+          self.new_bundle_recv_op();
+        }
         return;
       }
 
@@ -57,13 +59,17 @@ namespace uring
     /*     std::cout << "Received bundle with " << bytes_received << " bytes, starting from buffer ID " << buf_id_start
                   << std::endl; */
 
-    do {
+    do
+    {
       std::byte const* address = self.buffer_pool_.get_buffer_address(buf_id);
       std::size_t const size = std::min(bytes_received, self.buffer_pool_.get_buffer_size());
       self.bundle_.emplace_back(address, size);
       bytes_received -= size;
 
-      if (++buf_id == self.buffer_pool_.get_buffer_count()) { buf_id = buffer_id_type{0}; }
+      if (++buf_id == self.buffer_pool_.get_buffer_count())
+      {
+        buf_id = buffer_id_type{0};
+      }
 
     } while (bytes_received > 0);
 
@@ -83,13 +89,16 @@ namespace uring
       for (auto i = buffer_id_type{0}; i < buf_id_end; ++i) { self.buffer_pool_.push_buffer(i); }
     } */
 
-    if (!(cqe.flags & IORING_CQE_F_MORE)) { self.new_bundle_recv_op(); }
+    if (!(cqe.flags & IORING_CQE_F_MORE))
+    {
+      self.new_bundle_recv_op();
+    }
   }
 
   void bundle_receiver::new_bundle_recv_op()
   {
     auto const& file_handle = sock_.get_file_handle();
-    auto& sqe = io_ctx_.create_request(recv_handle_, on_bundle_recv, this);
+    auto& sqe = io_ctx_.create_request(recv_handle_, this, on_bundle_recv);
     file_handle.update_sqe_flag(sqe);
     io_uring_prep_recv_multishot(&sqe, file_handle.get_fd(), NULL, 0, 0);
     sqe.flags |= IOSQE_BUFFER_SELECT;

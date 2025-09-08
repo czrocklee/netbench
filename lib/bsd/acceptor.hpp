@@ -15,7 +15,7 @@ namespace bsd
 
     explicit acceptor(io_context& io_ctx);
 
-    void listen(const std::string& address, const std::string& port, int backlog = SOMAXCONN);
+    void listen(std::string const& address, std::string const& port, int backlog = SOMAXCONN);
 
     void start(accept_callback accept_cb);
 

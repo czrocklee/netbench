@@ -13,7 +13,10 @@ inline void parse_address(std::string const& full_address, std::string& host, st
 {
   auto colon_pos = full_address.find(':');
 
-  if (colon_pos == std::string::npos) { throw std::runtime_error{"Invalid address format. Expected host:port"}; }
+  if (colon_pos == std::string::npos)
+  {
+    throw std::runtime_error{"Invalid address format. Expected host:port"};
+  }
 
   host = full_address.substr(0, colon_pos);
   port = full_address.substr(colon_pos + 1);
@@ -21,7 +24,10 @@ inline void parse_address(std::string const& full_address, std::string& host, st
 
 inline void set_thread_cpu_affinity(std::thread::native_handle_type thread_handle, int cpu_id)
 {
-  if (cpu_id < 0) { return; }
+  if (cpu_id < 0)
+  {
+    return;
+  }
 
   ::cpu_set_t cpuset;
   CPU_ZERO(&cpuset);

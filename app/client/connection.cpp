@@ -119,7 +119,8 @@ void connection::try_drain_socket()
 {
   std::size_t bytes_read = 0;
 
-  do {
+  do
+  {
     char dummy;
     bytes_read = sock_.recv(&dummy, 1024 * 1024, MSG_TRUNC | MSG_DONTWAIT);
   } while (bytes_read > 0);

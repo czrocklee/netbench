@@ -3,6 +3,7 @@
 #include <variant>
 #include <type_traits>
 #include <utility>
+#include <stdexcept>
 
 namespace utility
 {
@@ -31,15 +32,29 @@ namespace utility
     // Access as reference
     T& get()
     {
-      if (std::holds_alternative<ref_type>(storage_)) { return std::get<ref_type>(storage_).get(); }
-      else if (std::holds_alternative<own_type>(storage_)) { return std::get<own_type>(storage_); }
+      if (std::holds_alternative<ref_type>(storage_))
+      {
+        return std::get<ref_type>(storage_).get();
+      }
+      else if (std::holds_alternative<own_type>(storage_))
+      {
+        return std::get<own_type>(storage_);
+      }
+
       throw std::runtime_error{"ref_or_own: get() called on blank value"};
     }
 
     T const& get() const
     {
-      if (std::holds_alternative<ref_type>(storage_)) { return std::get<ref_type>(storage_).get(); }
-      else if (std::holds_alternative<own_type>(storage_)) { return std::get<own_type>(storage_); }
+      if (std::holds_alternative<ref_type>(storage_))
+      {
+        return std::get<ref_type>(storage_).get();
+      }
+      else if (std::holds_alternative<own_type>(storage_))
+      {
+        return std::get<own_type>(storage_);
+      }
+
       throw std::runtime_error{"ref_or_own: get() called on blank value"};
     }
 

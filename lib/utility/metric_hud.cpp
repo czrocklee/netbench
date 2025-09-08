@@ -56,7 +56,10 @@ namespace utility
   metric_hud::metric_hud(std::chrono::seconds interval, std::move_only_function<metric()> action)
     : interval_(interval), action_(std::move(action))
   {
-    if (action == nullptr) { last_metric_.init_histogram(); }
+    if (action == nullptr)
+    {
+      last_metric_.init_histogram();
+    }
   }
 
   void metric_hud::tick()
@@ -146,8 +149,7 @@ namespace utility
 
     if (start_time_ == std::chrono::steady_clock::time_point{} || (now - last_time_checked_ >= interval_))
     {
-      constexpr std::string_view format_line =
-        "{:>8}  {:>8}  {:>8}  {:>8}  {:>8}  {:>8}  {:>8}  {:>8} / {:8}";
+      constexpr std::string_view format_line = "{:>8}  {:>8}  {:>8}  {:>8}  {:>8}  {:>8}  {:>8}  {:>8} / {:8}";
       // Initialize start_time_ on the first actual tick
       if (start_time_ == std::chrono::steady_clock::time_point{})
       {

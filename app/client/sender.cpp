@@ -12,7 +12,10 @@ sender::sender(int id, int conns, std::size_t msg_size, int msgs_per_sec)
 {
   conns_.reserve(conns);
 
-  for (int i = 0; i < conns; ++i) { conns_.emplace_back(id * 1000 + i, msg_size); }
+  for (int i = 0; i < conns; ++i)
+  {
+    conns_.emplace_back(id * 1000 + i, msg_size);
+  }
 }
 
 void sender::start(std::string const& host, std::string const& port, std::string const& bind_address, bool nodelay)
@@ -32,7 +35,10 @@ void sender::start(std::string const& host, std::string const& port, std::string
 
 void sender::enable_drain()
 {
-  for (auto& conn : conns_) { conn.enable_drain(); }
+  for (auto& conn : conns_)
+  {
+    conn.enable_drain();
+  }
 }
 
 void sender::run()
@@ -56,7 +62,10 @@ void sender::run()
 
       total_send_ops_.store(total_send_ops_.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
 
-      if (conn_idx == conns_.size()) { conn_idx = 0; }
+      if (conn_idx == conns_.size())
+      {
+        conn_idx = 0;
+      }
     }
   }
 }
