@@ -28,7 +28,7 @@ int main(int argc, char** argv)
   CLI::App app{"C++ TCP receiver"};
 
   std::string address_str;
-  app.add_option("-a,--address", address_str, "Target address in host:port format")->default_val("0.0.0.0:9004");
+  app.add_option("-a,--address", address_str, "Target address in host:port format")->default_val("0.0.0.0:19004");
 
   worker::config cfg;
 

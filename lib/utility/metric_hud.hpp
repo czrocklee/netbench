@@ -1,5 +1,8 @@
 #pragma once
 
+#include <boost/chrono/process_cpu_clocks.hpp>
+#include <hdr/hdr_histogram.h>
+
 #include <cstdint>
 #include <functional>
 #include <chrono>
@@ -7,8 +10,6 @@
 #include <iostream>
 #include <numeric>
 #include <memory>
-
-#include <hdr/hdr_histogram.h>
 
 namespace utility
 {
@@ -37,11 +38,13 @@ namespace utility
 
     void tick();
 
-    void collect(sample s, std::chrono::steady_clock::time_point now);
+    void collect(sample s, boost::chrono::process_cpu_clock::time_point now);
 
   private:
-    std::chrono::steady_clock::time_point start_time_;
-    std::chrono::steady_clock::time_point last_time_checked_;
+    using clock_type = boost::chrono::process_cpu_clock;
+
+    clock_type::time_point start_time_;
+    clock_type::time_point last_time_checked_;
     metric last_metric_;
     std::chrono::seconds const interval_;
     std::move_only_function<metric()> action_;

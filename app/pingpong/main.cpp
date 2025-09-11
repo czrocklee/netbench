@@ -112,7 +112,7 @@ int main(int argc, char** argv)
           {
             //    std::cout << queue.read_available()  << std::endl;
 
-            auto const now = std::chrono::steady_clock::now();
+            auto const now = boost::chrono::process_cpu_clock::now();
             queue.consume_all([&](utility::sample const& sample) { hud.collect(sample, now); });
           }
         }

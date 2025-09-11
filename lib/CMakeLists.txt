@@ -43,4 +43,5 @@ add_library(utility_lib
 )
 
 target_include_directories(utility_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(utility_lib PUBLIC hdr_histogram::hdr_histogram)
+find_package(Boost REQUIRED COMPONENTS chrono)
+target_link_libraries(utility_lib PUBLIC hdr_histogram::hdr_histogram Boost::chrono)

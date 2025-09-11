@@ -4,6 +4,9 @@
 #include <cstdint>
 #include <iomanip> // For std::fixed, std::setprecision
 #include <sstream> // For std::stringstream
+#include <fstream>
+#include <unistd.h>
+#include <sys/time.h>
 
 namespace utility
 {
@@ -64,15 +67,17 @@ namespace utility
 
   void metric_hud::tick()
   {
-    auto const now = std::chrono::steady_clock::now();
     constexpr std::string_view format_line =
-      "{:>8} / {:8}  {:>8} / {:8}  {:>8} / {:8}  {:>8} / {:8}  {:>8}  {:>8}  {:>8}";
+      "{:>6} / {:6}  {:>6} / {:6}  {:>6} / {:6}  {:>6} / {:6}  {:>6}  {:>6}  {:>6}  {:>4} / {:4}";
+    auto const now = clock_type::now();
+    auto const duration_since_last_check = (now - last_time_checked_).count();
 
     // Only update if the interval has passed, or if it's the very first tick
-    if (start_time_ == std::chrono::steady_clock::time_point{} || (now - last_time_checked_ >= interval_))
+    if (
+      start_time_ == clock_type::time_point{} || std::chrono::nanoseconds{duration_since_last_check.real} >= interval_)
     {
       // Initialize start_time_ on the first actual tick
-      if (start_time_ == std::chrono::steady_clock::time_point{})
+      if (start_time_ == clock_type::time_point{})
       {
         start_time_ = now;
         std::cout << std::format(
@@ -85,15 +90,17 @@ namespace utility
                        "(all)",
                        "unit",
                        "(all)",
-                       "mean(us)",
-                       "p50(us)",
-                       "p99.99(us)")
+                       "mean",
+                       "p50",
+                       "p99",
+                       "ucpu",
+                       "cpu")
                   << std::endl;
       }
 
       auto metric = action_();
 
-      auto const elapsed_total_time = std::chrono::duration<double>(now - start_time_).count();
+      auto const elapsed_total_time = (now - start_time_).count().real / 1e9;
       auto const total_op_rate = metric.ops / elapsed_total_time;
       auto const total_msg_rate = metric.msgs / elapsed_total_time;
       auto const total_throughput = metric.bytes / elapsed_total_time;
@@ -101,14 +108,19 @@ namespace utility
       double current_op_rate = 0;
       double current_msg_rate = 0;
       double current_throughput = 0;
+      double cpu_user_percent = 0;
+      double cpu_percent = 0;
 
-      auto const elapsed_since_last_check = std::chrono::duration<double>(now - last_time_checked_).count();
+      auto const elapsed_since_last_check = duration_since_last_check.real / 1e9;
 
       if (elapsed_since_last_check > 0) // Avoid division by zero if interval is too small or first tick
       {
         current_op_rate = (metric.ops - last_metric_.ops) / elapsed_since_last_check;
         current_msg_rate = (metric.msgs - last_metric_.msgs) / elapsed_since_last_check;
         current_throughput = (metric.bytes - last_metric_.bytes) / elapsed_since_last_check;
+        cpu_user_percent = static_cast<double>(duration_since_last_check.user) / duration_since_last_check.real * 100.0;
+        cpu_percent = static_cast<double>(duration_since_last_check.user + duration_since_last_check.system) /
+                      duration_since_last_check.real * 100.0;
       }
       else if (start_time_ == now)
       { // If it's the very first tick, current rate is the same as total rate
@@ -132,8 +144,10 @@ namespace utility
                        ? pretty_print(::hdr_value_at_percentile(metric.latency_hist.get(), 50.0) / 1000.0, 2)
                        : "na",
                      metric.latency_hist
-                       ? pretty_print(::hdr_value_at_percentile(metric.latency_hist.get(), 99.99) / 1000.0, 2)
-                       : "na")
+                       ? pretty_print(::hdr_value_at_percentile(metric.latency_hist.get(), 99.0) / 1000.0, 2)
+                       : "na",
+                     pretty_print(cpu_user_percent, 1),
+                     pretty_print(cpu_percent, 1))
                 << std::endl;
 
       last_metric_ = std::move(metric);
@@ -141,17 +155,19 @@ namespace utility
     }
   }
 
-  void metric_hud::collect(sample s, std::chrono::steady_clock::time_point now)
+  void metric_hud::collect(sample s, clock_type::time_point now)
   {
     ++last_metric_.msgs;
     last_metric_.update_latency_histogram(s.recv_ts - s.send_ts);
     // std::cout << s.recv_ts - s.send_ts << " on hist " << last_metric_.latency_hist.get() << std::endl;
 
-    if (start_time_ == std::chrono::steady_clock::time_point{} || (now - last_time_checked_ >= interval_))
+    if (
+      start_time_ == clock_type::time_point{} ||
+      std::chrono::nanoseconds{(now - last_time_checked_).count()} >= interval_)
     {
       constexpr std::string_view format_line = "{:>8}  {:>8}  {:>8}  {:>8}  {:>8}  {:>8}  {:>8}  {:>8} / {:8}";
       // Initialize start_time_ on the first actual tick
-      if (start_time_ == std::chrono::steady_clock::time_point{})
+      if (start_time_ == clock_type::time_point{})
       {
         start_time_ = now;
         std::cout << std::format(
@@ -168,7 +184,7 @@ namespace utility
                   << std::endl;
       }
 
-      auto const elapsed_total_time = std::chrono::duration<double>(now - start_time_).count();
+      auto const elapsed_total_time = (now - start_time_).count().real / 1e9;
       auto const total_msg_rate = last_metric_.msgs / elapsed_total_time;
       auto const hist = last_metric_.latency_hist.get();
       /* std::cout << ::hdr_value_at_percentile(hist, 50.0) << "xx " << ::hdr_value_at_percentile(hist, 50.0) / 1000

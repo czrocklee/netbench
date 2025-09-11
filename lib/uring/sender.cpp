@@ -1,6 +1,8 @@
 #include "sender.hpp"
 #include <magic_enum/magic_enum.hpp>
 
+#include <numeric>
+
 namespace uring
 {
   sender::sender(io_context& io_ctx, registered_buffer_pool& buf_pool, std::size_t max_buf_size)
@@ -198,27 +200,27 @@ namespace uring
       LOG_DEBUG(
         "zerocopy send notif, front buffer cleared: err={}, front_counter={}, active_index={}, pending_zf_notify={}",
         std::strerror(-cqe.res),
-        std::acumulate(
+        write_list_.empty() ? 0 : write_list_.front().pending_zf_notify,
+        active_index_,
+        std::accumulate(
           write_list_.begin(),
           write_list_.begin() + active_index_ + 1,
           0,
-          [](std::size_t sum, buffer_data const& bd) { return sum + bd.pending_zf_notify; }),
-        active_index_,
-        pending_zf_notify_);
+          [](std::size_t sum, buffer_data const& bd) { return sum + bd.pending_zf_notify; }));
     }
     else
     {
       LOG_DEBUG(
         "zerocopy send notif: err={}, front_counter={}, state={}, active_index={}, pending_zf_notify={}",
         std::strerror(-cqe.res),
-        std::acumulate(
+        data.pending_zf_notify,
+        magic_enum::enum_name(state_),
+        active_index_,
+        std::accumulate(
           write_list_.begin(),
           write_list_.begin() + active_index_ + 1,
           0,
-          [](std::size_t sum, buffer_data const& bd) { return sum + bd.pending_zf_notify; }),
-        magic_enum::enum_name(state_),
-        active_index_,
-        pending_zf_notify_);
+          [](std::size_t sum, buffer_data const& bd) { return sum + bd.pending_zf_notify; }));
     }
   }
 }
