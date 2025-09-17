@@ -56,6 +56,23 @@ namespace utility
 #define LOG_ERROR(...) spdlog::error(__VA_ARGS__)
 #define LOG_CRITICAL(...) spdlog::critical(__VA_ARGS__)
 
+// LOG_XXX_NOEVAL macros: only call spdlog if level is enabled (prevents argument evaluation)
+#define LOG_SPDLOG_NOEVAL(level, func, ...)                                                                            \
+  do                                                                                                                   \
+  {                                                                                                                    \
+    if (spdlog::should_log(level))                                                                                     \
+    {                                                                                                                  \
+      spdlog::func(__VA_ARGS__);                                                                                       \
+    }                                                                                                                  \
+  } while (0)
+
+#define LOG_TRACE_NOEVAL(...) LOG_SPDLOG_NOEVAL(spdlog::level::trace, trace, __VA_ARGS__)
+#define LOG_DEBUG_NOEVAL(...) LOG_SPDLOG_NOEVAL(spdlog::level::debug, debug, __VA_ARGS__)
+#define LOG_INFO_NOEVAL(...) LOG_SPDLOG_NOEVAL(spdlog::level::info, info, __VA_ARGS__)
+#define LOG_WARN_NOEVAL(...) LOG_SPDLOG_NOEVAL(spdlog::level::warn, warn, __VA_ARGS__)
+#define LOG_ERROR_NOEVAL(...) LOG_SPDLOG_NOEVAL(spdlog::level::err, error, __VA_ARGS__)
+#define LOG_CRITICAL_NOEVAL(...) LOG_SPDLOG_NOEVAL(spdlog::level::critical, critical, __VA_ARGS__)
+
 #elif defined(USE_STDERR_LOGGER)
 
 #include <iostream>
@@ -99,6 +116,13 @@ inline void log_stderr(std::format_string<Args...> fmt, Args&&... args)
 #define LOG_ERROR(...) LOG_LEVEL_MACRO(::utility::log_level::error, "[ERROR] ", __VA_ARGS__)
 #define LOG_CRITICAL(...) LOG_LEVEL_MACRO(::utility::log_level::critical, "[CRIT ] ", __VA_ARGS__)
 
+#define LOG_TRACE_NOEVAL(...) LOG_TRACE(__VA_ARGS__)
+#define LOG_DEBUG_NOEVAL(...) LOG_DEBUG(__VA_ARGS__)
+#define LOG_INFO_NOEVAL(...) LOG_INFO(__VA_ARGS__)
+#define LOG_WARN_NOEVAL(...) LOG_WARN(__VA_ARGS__)
+#define LOG_ERROR_NOEVAL(...) LOG_ERROR(__VA_ARGS__)
+#define LOG_CRITICAL_NOEVAL(...) LOG_CRITICAL(__VA_ARGS__)
+
 #elif !defined(USE_CUSTOM_LOGGER)
 
 namespace utility
@@ -117,5 +141,12 @@ namespace utility
 #define LOG_INFO(...) ((void)0)
 #define LOG_WARN(...) ((void)0)
 #define LOG_ERROR(...) ((void)0)
+
+#define LOG_TRACE_NOEVAL(...) ((void)0)
+#define LOG_DEBUG_NOEVAL(...) ((void)0)
+#define LOG_INFO_NOEVAL(...) ((void)0)
+#define LOG_WARN_NOEVAL(...) ((void)0)
+#define LOG_ERROR_NOEVAL(...) ((void)0)
+#define LOG_CRITICAL_NOEVAL(...) ((void)0)
 
 #endif

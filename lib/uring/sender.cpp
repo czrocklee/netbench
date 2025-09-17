@@ -65,6 +65,7 @@ namespace uring
       ::io_uring_prep_send_zc_fixed(&sqe, file.get_fd(), buf.data(), data.size, 0, 0, data.index.value());
       sqe.ioprio |= IORING_SEND_ZC_REPORT_USAGE;
       last_send_sqe_ = &sqe;
+      ++data.pending_zf_notify;
     }
     else
     {
@@ -129,7 +130,6 @@ namespace uring
   {
     if (cqe.flags & IORING_CQE_F_NOTIF)
     {
-      LOG_TRACE("received zerocopy notify");
       on_zf_notify(cqe);
       return;
     }
@@ -184,10 +184,9 @@ namespace uring
   void sender::on_zf_notify(::io_uring_cqe const& cqe)
   {
     // std::cout << "notify received " << active_buf_->pending_zf_notify - 1 << std::endl;
-
     auto& data = write_list_.front();
 
-    if (--data.pending_zf_notify == 0)
+    if (--data.pending_zf_notify == 0 && data.size == 0)
     {
       buf_pool_.release_buffer(data.index);
       write_list_.pop_front();
@@ -197,30 +196,30 @@ namespace uring
         --active_index_;
       }
 
-      LOG_DEBUG(
+      LOG_DEBUG_NOEVAL(
         "zerocopy send notif, front buffer cleared: err={}, front_counter={}, active_index={}, pending_zf_notify={}",
         std::strerror(-cqe.res),
         write_list_.empty() ? 0 : write_list_.front().pending_zf_notify,
         active_index_,
-        std::accumulate(
-          write_list_.begin(),
-          write_list_.begin() + active_index_ + 1,
-          0,
-          [](std::size_t sum, buffer_data const& bd) { return sum + bd.pending_zf_notify; }));
+        write_list_.empty() ? 0
+                            : std::accumulate(
+                                write_list_.begin(),
+                                write_list_.begin() + active_index_ + 1,
+                                0,
+                                [](std::size_t sum, buffer_data const& bd) { return sum + bd.pending_zf_notify; }));
     }
     else
     {
-      LOG_DEBUG(
+      LOG_DEBUG_NOEVAL(
         "zerocopy send notif: err={}, front_counter={}, state={}, active_index={}, pending_zf_notify={}",
         std::strerror(-cqe.res),
         data.pending_zf_notify,
         magic_enum::enum_name(state_),
         active_index_,
         std::accumulate(
-          write_list_.begin(),
-          write_list_.begin() + active_index_ + 1,
-          0,
-          [](std::size_t sum, buffer_data const& bd) { return sum + bd.pending_zf_notify; }));
+          write_list_.begin(), write_list_.begin() + active_index_ + 1, 0, [](std::size_t sum, buffer_data const& bd) {
+            return sum + bd.pending_zf_notify;
+          }));
     }
   }
 }
