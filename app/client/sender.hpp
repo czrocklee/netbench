@@ -17,6 +17,7 @@ public:
 
   void start(std::string const& host, std::string const& port, std::string const& bind_address, bool nodelay);
   void enable_drain();
+  void set_socket_buffer_size(int size);
 
   std::uint64_t total_msgs_sent() const { return total_msgs_sent_.load(std::memory_order_relaxed); }
   std::uint64_t total_send_ops() const { return total_send_ops_.load(std::memory_order_relaxed); }

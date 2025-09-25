@@ -16,11 +16,11 @@
 #include <vector>
 #include <future>
 
-std::atomic<bool> shutdown_flag = false;
+std::atomic<int> shutdown_counter = 1;
 
 void signal_handler(int /* signum */)
 {
-  shutdown_flag = true;
+  shutdown_counter = -1;
 }
 
 int main(int argc, char** argv)
@@ -43,7 +43,9 @@ int main(int argc, char** argv)
     ->default_val(worker::config::echo_mode::none)
     ->transform(CLI::CheckedTransformer(echo_mode_map, CLI::ignore_case));
 
-  app.add_option("-b,--buffer-size", cfg.buffer_size, "Size of receive buffer in bytes")->default_val(1024);
+  app.add_option("-b,--buffer-size", cfg.buffer_size, "Size of receive buffer in bytes")
+    ->default_val(1024)
+    ->transform(CLI::AsSizeValue(false));
 
   app
     .add_option(
@@ -51,18 +53,6 @@ int main(int argc, char** argv)
       cfg.collect_latency_every_n_samples,
       "Collect latency metrics every n samples")
     ->default_val(0);
-
-#ifdef IO_URING_API
-  app.add_option("-z,--zerocopy", cfg.zerocopy, "Use zerocopy send or not")->default_val(true);
-
-  app.add_option("-c,--buffer-count", cfg.buffer_count, "Number of buffers in pool prepared for each worker")
-    ->default_val(2048);
-
-  app.add_option("-d,--uring-depth", cfg.uring_depth, "io_uring queue depth")->default_val(1024 * 16);
-#elifdef BSD_API
-  app.add_option("-r,--read-limit", cfg.read_limit, "Optional read limit for BSD API (0 for no limit)")
-    ->default_val(1024 * 64);
-#endif
 
   bool busy_spin;
   app.add_option("-s,--busy-spin", busy_spin, "Enable busy spin polling")->default_val(false);
@@ -77,12 +67,51 @@ int main(int argc, char** argv)
   app.add_option("-L,--log-level", log_level, "Minimum log level (trace, debug, info, warn, error, critical)")
     ->default_val("info");
 
+  app
+    .add_option(
+      "--so-rcvbuf", cfg.socket_recv_buffer_size, "Socket receive buffer size in bytes (0 for system default)")
+    ->default_val(0)
+    ->transform(CLI::AsSizeValue(false));
+
+  app.add_option("--so-sndbuf", cfg.socket_send_buffer_size, "Socket send buffer size in bytes (0 for system default)")
+    ->default_val(0)
+    ->transform(CLI::AsSizeValue(false));
+
+  app.add_option("--shutdown-on-disconnect", cfg.shutdown_on_disconnect, "Shutdown server when a client disconnects")
+    ->default_val(false);
+
+  bool metrics_hud;
+  app.add_option("-M,--metrics-hud", metrics_hud, "Enable metrics HUD display")->default_val(true);
+
+#ifdef IO_URING_API
+  app.add_option("-z,--zerocopy", cfg.zerocopy, "Use zerocopy send or not")->default_val(true);
+
+  app.add_option("-c,--buffer-count", cfg.buffer_count, "Number of buffers in pool prepared for each worker")
+    ->default_val(2048)
+    ->transform(CLI::AsSizeValue(false));
+
+  app.add_option("-d,--uring-depth", cfg.uring_depth, "io_uring queue depth")
+    ->default_val(1024 * 16)
+    ->transform(CLI::AsSizeValue(false));
+
+#elifdef BSD_API
+  app.add_option("-r,--read-limit", cfg.read_limit, "Optional read limit for BSD API (0 for no limit)")
+    ->default_val(1024 * 64)
+    ->transform(CLI::AsSizeValue(false));
+#endif
+
   CLI11_PARSE(app, argc, argv);
 
   if (num_workers <= 0)
   {
     std::cerr << "Number of workers must be greater than 0." << std::endl;
     return 1;
+  }
+
+  if (cfg.shutdown_on_disconnect)
+  {
+    shutdown_counter = num_workers;
+    cfg.shutdown_counter = &shutdown_counter;
   }
 
   signal(SIGINT, signal_handler);
@@ -135,7 +164,6 @@ int main(int argc, char** argv)
       {
         std::cerr << "Main thread FAILED to hand off fd " << accepted_fd << " to worker " << next_worker_idx
                   << " (queue full?)" << std::endl;
-        // The net::socket new_sock will be destructed here, closing the FD.
       }
 
       next_worker_idx = (next_worker_idx + 1) % workers.size();
@@ -143,7 +171,7 @@ int main(int argc, char** argv)
 
     std::cout << "Main thread acceptor listening on " << address_str << std::endl;
 
-    auto collect_metric = [&workers]() -> utility::metric {
+    auto collect_metric = [&workers] {
       utility::metric total_metric{};
       total_metric.init_histogram();
 
@@ -163,22 +191,38 @@ int main(int argc, char** argv)
       return total_metric;
     };
 
-    utility::metric_hud hud{std::chrono::seconds{5}, collect_metric};
+    auto hud = std::optional<utility::metric_hud>{};
 
-    while (!shutdown_flag)
+    if (metrics_hud)
+    {
+      hud.emplace(std::chrono::seconds{5}, collect_metric);
+    }
+
+    while (shutdown_counter > 0)
     {
       io_ctx.run_for(std::chrono::milliseconds{1000});
-      hud.tick();
+
+      if (metrics_hud)
+      {
+        hud->tick();
+      }
 #ifdef ASIO_API
       io_ctx.restart();
 #endif
     }
 
-    std::cout << "\nShutting down..." << std::endl;
-
-    for (auto& worker : workers)
+    if (shutdown_counter < 0)
     {
-      worker->stop();
+      std::cout << "Shutdown signal received, stopping server..." << std::endl;
+
+      for (auto& worker : workers)
+      {
+        worker->stop();
+      }
+    }
+    else
+    {
+      std::cout << "All clients disconnected, server stopped." << std::endl;
     }
   }
   catch (std::exception const& e)

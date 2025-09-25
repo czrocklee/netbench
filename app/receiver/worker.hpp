@@ -17,6 +17,9 @@ using net = bsd::tcp;
 #include <boost/lockfree/spsc_queue.hpp>
 
 #include <atomic>
+#include <chrono>
+#include <optional>
+#include <functional>
 #include <list>
 #include <memory>
 #include <string>
@@ -34,9 +37,13 @@ public:
       per_msg
     };
 
-    echo_mode echo = echo_mode::none;
+    echo_mode echo;
     std::size_t buffer_size;
+    int socket_recv_buffer_size;
+    int socket_send_buffer_size;
     int collect_latency_every_n_samples;
+    bool shutdown_on_disconnect;
+    std::atomic<int>* shutdown_counter;
 #ifdef IO_URING_API
     bool zerocopy;
     std::uint32_t uring_depth;
@@ -92,4 +99,6 @@ private:
   std::list<connection> connections_;
   boost::lockfree::spsc_queue<std::move_only_function<void()>> pending_task_queue_;
   std::thread thread_;
+  std::chrono::steady_clock::time_point conn_begin_time_{};
+  std::chrono::steady_clock::time_point conn_end_time_{};
 };

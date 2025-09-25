@@ -41,6 +41,14 @@ void sender::enable_drain()
   }
 }
 
+void sender::set_socket_buffer_size(int size)
+{
+  for (auto& conn : conns_)
+  {
+    conn.set_socket_buffer_size(size);
+  }
+}
+
 void sender::run()
 {
   int conn_idx = 0;

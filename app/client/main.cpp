@@ -23,16 +23,25 @@ int main(int argc, char** argv)
   app.add_option("-s,--senders", senders, "Number of senders")->default_val(1);
 
   int msgs_per_sec;
-  app.add_option("-m,--msgs-per-sec", msgs_per_sec, "Messages per second per sender")->default_val(1000);
+  app.add_option("-m,--msgs-per-sec", msgs_per_sec, "Messages per second per sender")
+    ->default_val(1000)
+    ->transform(CLI::AsSizeValue(true));
 
   int msg_size;
-  app.add_option("-z,--msg-size", msg_size, "Message size in bytes")->default_val(1024);
+  app.add_option("-z,--msg-size", msg_size, "Message size in bytes")
+    ->default_val(1024)
+    ->transform(CLI::AsSizeValue(false));
 
   bool nodelay;
   app.add_flag("-n,--nodelay", nodelay, "Enable TCP_NODELAY")->default_val(false);
 
   bool drain;
   app.add_flag("-d,--drain", drain, "Enable receive buffer draining")->default_val(false);
+
+  int socket_buffer_size;
+  app.add_option("-S,--socket-buffer-size", socket_buffer_size, "Socket buffer size in bytes")
+    ->default_val(0)
+    ->transform(CLI::AsSizeValue(false));
 
   CLI11_PARSE(app, argc, argv);
 
@@ -41,6 +50,10 @@ int main(int argc, char** argv)
   std::cout << "Senders per connection: " << senders << std::endl;
   std::cout << "Messages per second per sender: " << msgs_per_sec << std::endl;
   std::cout << "Message size: " << msg_size << " bytes" << std::endl;
+  std::cout << "Nodelay: " << (nodelay ? "enabled" : "disabled") << std::endl;
+  std::cout << "Drain: " << (drain ? "enabled" : "disabled") << std::endl;
+  std::cout << "Socket buffer size: "
+            << (socket_buffer_size > 0 ? std::to_string(socket_buffer_size) + " bytes" : "system default") << std::endl;
 
   std::string host;
   std::string port;

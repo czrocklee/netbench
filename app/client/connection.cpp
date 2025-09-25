@@ -1,8 +1,10 @@
 #include "connection.hpp"
+#include <utility/time.hpp>
+#include <asio/socket_base.hpp>
+#include "../common/metadata.hpp"
+
 #include <iostream>
 #include <cstring>
-#include <utility/time.hpp>
-#include "../common/metadata.hpp"
 
 namespace
 {
@@ -113,6 +115,12 @@ std::size_t connection::try_send(std::size_t count)
 void connection::enable_drain()
 {
   bytes_to_drain_ = 0;
+}
+
+void connection::set_socket_buffer_size(int size)
+{
+  sock_.set_option(::asio::socket_base::receive_buffer_size{size});
+  sock_.set_option(::asio::socket_base::send_buffer_size{size});
 }
 
 void connection::try_drain_socket()

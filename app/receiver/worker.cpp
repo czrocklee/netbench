@@ -3,6 +3,8 @@
 #include "utility/time.hpp"
 
 #include <magic_enum/magic_enum.hpp>
+#include <asio/socket_base.hpp>
+
 #include <iostream>
 
 worker::worker(config cfg)
@@ -53,7 +55,6 @@ void worker::stop()
     io_ctx_.stop();
 #endif
     thread_.join();
-    std::cout << "worker thread " << std::this_thread::get_id() << " joined." << std::endl;
   }
 }
 
@@ -71,6 +72,15 @@ void worker::add_connection(net::socket sock)
 #ifdef BSD_API
     iter->receiver.set_read_limit(config_.read_limit);
 #endif
+    if (config_.socket_recv_buffer_size > 0)
+    {
+      sock.set_option(::asio::socket_base::receive_buffer_size{config_.socket_recv_buffer_size});
+    }
+
+    if (config_.socket_send_buffer_size > 0)
+    {
+      sock.set_option(::asio::socket_base::send_buffer_size{config_.socket_send_buffer_size});
+    }
 
     metadata md;
     sock.receive(::asio::buffer(&md, sizeof(md)), 0);
@@ -106,13 +116,25 @@ void worker::add_connection(net::socket sock)
     iter->receiver.start([this, iter](std::error_code ec, auto&& data) {
       if (ec)
       {
-        std::cerr << "Error receiving data: " << ec.message() << std::endl;
         connections_.erase(iter);
+
+        if (config_.shutdown_on_disconnect && connections_.empty())
+        {
+          conn_end_time_ = std::chrono::steady_clock::now();
+          config_.shutdown_counter->fetch_sub(1);
+          stop_flag_.store(true, std::memory_order::relaxed);
+        }
+
         return;
       }
 
       on_data(*iter, data);
     });
+
+    if (conn_begin_time_ == std::chrono::steady_clock::time_point{})
+    {
+      conn_begin_time_ = std::chrono::steady_clock::now();
+    }
   }
   catch (std::exception const& e)
   {
@@ -252,7 +274,7 @@ void worker::run()
     std::cerr << "Error in worker thread: " << e.what() << std::endl;
   }
 
-  std::cout << "worker thread " << std::this_thread::get_id() << " stopping." << std::endl;
+  std::cout << "worker thread " << std::this_thread::get_id() << " stopped." << std::endl;
 }
 
 void worker::run_busy_spin()
@@ -288,5 +310,5 @@ void worker::run_busy_spin()
     std::cerr << "Error in worker thread: " << e.what() << std::endl;
   }
 
-  std::cout << "worker thread " << std::this_thread::get_id() << " stopping." << std::endl;
+  std::cout << "worker thread " << std::this_thread::get_id() << " stopped." << std::endl;
 }

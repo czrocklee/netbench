@@ -5,10 +5,11 @@
 #include "../common/metadata.hpp"
 
 #include <asio/buffer.hpp>
+#include <utility/time.hpp>
+
 #include <cstring>
 #include <iostream>
 #include <string>
-#include <utility/time.hpp>
 
 class connection
 {
@@ -20,6 +21,7 @@ public:
 
   void enable_drain();
   void set_nodelay(bool enable) { sock_.set_nodelay(enable); }
+  void set_socket_buffer_size(int size); 
 
 private:
   void try_drain_socket();
