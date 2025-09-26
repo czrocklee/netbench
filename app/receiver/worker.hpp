@@ -1,7 +1,7 @@
 #pragma once
 
 #include "bsd/socket.hpp"
-#include "utility/metric_hud.hpp"
+#include "metric_hud.hpp"
 
 #ifdef IO_URING_API
 #include "uring/tcp.hpp"
@@ -63,7 +63,7 @@ public:
   void add_connection(net::socket sock);
   bool post(std::move_only_function<void()> task);
 
-  utility::metric const& get_metrics() const { return metrics_; }
+  metric const& get_metrics() const { return metrics_; }
 
   net::io_context& get_io_context() { return io_ctx_; }
 
@@ -95,7 +95,7 @@ private:
 #ifdef IO_URING_API
   uring::provided_buffer_pool recv_pool_;
 #endif
-  utility::metric metrics_{};
+  metric metrics_{};
   std::list<connection> connections_;
   boost::lockfree::spsc_queue<std::move_only_function<void()>> pending_task_queue_;
   std::thread thread_;

@@ -112,11 +112,6 @@ std::size_t connection::try_send(std::size_t count)
   return 1 + bytes_sent_except_first / msg_.size();
 }
 
-void connection::enable_drain()
-{
-  bytes_to_drain_ = 0;
-}
-
 void connection::set_socket_buffer_size(int size)
 {
   sock_.set_option(::asio::socket_base::receive_buffer_size{size});

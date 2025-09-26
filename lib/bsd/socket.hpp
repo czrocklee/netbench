@@ -34,6 +34,7 @@ namespace bsd
     socket(socket&& other) noexcept;
     socket& operator=(socket&& other) noexcept;
 
+    void close();
     void connect(std::string const& host, std::string const& port);
     void bind(std::string const& address, std::string const& port);
     void listen(int backlog);

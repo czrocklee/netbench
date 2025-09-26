@@ -18,8 +18,9 @@ public:
 
   void connect(std::string const& host, std::string const& port, std::string const& bind_address = "");
   std::size_t try_send(std::size_t count);
+  void close() { sock_.close(); }
 
-  void enable_drain();
+  void enable_drain() { bytes_to_drain_ = 0; }
   void set_nodelay(bool enable) { sock_.set_nodelay(enable); }
   void set_socket_buffer_size(int size); 
 

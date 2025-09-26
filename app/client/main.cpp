@@ -1,10 +1,15 @@
 #include "sender.hpp"
-#include "utility/metric_hud.hpp"
+#include "metric_hud.hpp"
+#include "utils.hpp"
 
 #include <CLI/CLI.hpp>
 
 #include <iostream>
 #include <deque>
+#include <string>
+#include <thread>
+#include <chrono>
+#include <atomic>
 
 int main(int argc, char** argv)
 {
@@ -43,13 +48,32 @@ int main(int argc, char** argv)
     ->default_val(0)
     ->transform(CLI::AsSizeValue(false));
 
+  std::uint64_t stop_after_n_msgs;
+  app.add_option("--stop-after-n-msgs", stop_after_n_msgs, "Stop after n messages")
+    ->default_val(0)
+    ->transform(CLI::AsSizeValue(true));
+
+  std::uint64_t stop_after_n_secs;
+  app.add_option("--stop-after-n-secs", stop_after_n_secs, "Stop after n seconds")->default_val(0);
+
+  int metric_hud_interval_secs;
+  app
+    .add_option(
+      "-M,--metric-hud-interval-secs", metric_hud_interval_secs, "Metric HUD interval in seconds, 0 for disabled")
+    ->default_val(5);
+
   CLI11_PARSE(app, argc, argv);
 
   std::cout << "Target address: " << address << std::endl;
-  std::cout << "Connections: " << conns << std::endl;
-  std::cout << "Senders per connection: " << senders << std::endl;
-  std::cout << "Messages per second per sender: " << msgs_per_sec << std::endl;
+  std::cout << "Bind address: " << (bind_address.empty() ? "not set" : bind_address) << std::endl;
+  std::cout << "Senders: " << senders << std::endl;
+  std::cout << "Connections per sender: " << conns << std::endl;
   std::cout << "Message size: " << msg_size << " bytes" << std::endl;
+  std::cout << "Messages per second per sender: " << msgs_per_sec << std::endl;
+  std::cout << "Stop after n messages: " << (stop_after_n_msgs > 0 ? std::to_string(stop_after_n_msgs) : "disabled")
+            << std::endl;
+  std::cout << "Stop after n seconds: " << (stop_after_n_secs > 0 ? std::to_string(stop_after_n_secs) : "disabled")
+            << std::endl;
   std::cout << "Nodelay: " << (nodelay ? "enabled" : "disabled") << std::endl;
   std::cout << "Drain: " << (drain ? "enabled" : "disabled") << std::endl;
   std::cout << "Socket buffer size: "
@@ -69,28 +93,49 @@ int main(int argc, char** argv)
     port = address.substr(colon_pos + 1);
   }
 
+  std::atomic<int>& shutdown_counter = setup_signal_handlers();
+
   auto ss = std::deque<sender>{};
 
   for (auto i = 0; i < senders; ++i)
   {
-    ss.emplace_back(i, conns, msg_size, msgs_per_sec / senders);
-  }
+    auto& s = ss.emplace_back(i, conns, msg_size);
 
-  for (auto& s : ss)
-  {
-    s.start(host, port, bind_address, nodelay);
-  }
+    if (stop_after_n_msgs > 0)
+    {
+      s.stop_after_n_messages(stop_after_n_msgs);
+    }
+    else if (stop_after_n_secs > 0)
+    {
+      s.stop_after_n_seconds(stop_after_n_secs);
+    }
+    else
+    {
+      s.set_message_rate(msgs_per_sec / senders);
+    }
 
-  if (drain)
-  {
-    for (auto& s : ss)
+    if (socket_buffer_size > 0)
+    {
+      s.set_socket_buffer_size(socket_buffer_size);
+    }
+
+    if (drain)
     {
       s.enable_drain();
     }
+
+    if (nodelay)
+    {
+      s.set_nodelay(true);
+    }
+
+    s.connect(host, port, bind_address);
+    s.start(shutdown_counter);
   }
 
-  auto collect_metric = [&] {
-    auto total_metric = utility::metric{};
+  auto metric_hud = setup_metric_hud(std::chrono::seconds{metric_hud_interval_secs}, [&ss, msg_size] {
+    auto total_metric = metric{};
+    total_metric.init_histogram();
 
     for (auto& s : ss)
     {
@@ -100,14 +145,30 @@ int main(int argc, char** argv)
 
     total_metric.bytes = total_metric.msgs * msg_size;
     return total_metric;
-  };
+  });
 
-  utility::metric_hud hud{std::chrono::seconds{5}, collect_metric};
-
-  while (true)
+  while (shutdown_counter > 0)
   {
-    hud.tick();
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    if (metric_hud)
+    {
+      metric_hud->tick();
+    }
+  }
+
+  if (shutdown_counter < 0)
+  {
+    std::cout << "Shutdown signal received, stopping senders..." << std::endl;
+  }
+  else
+  {
+    std::cout << "All senders stopped." << std::endl;
+  }
+
+  for (auto& s : ss)
+  {
+    s.stop();
   }
 
   return 0;

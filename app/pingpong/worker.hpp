@@ -1,7 +1,7 @@
 #pragma once
 
 #include "bsd/socket.hpp"
-#include "utility/metric_hud.hpp"
+#include "metric_hud.hpp"
 
 #ifdef IO_URING_API
 #include "uring/tcp.hpp"
@@ -77,5 +77,5 @@ private:
   uring::registered_buffer_pool fixed_buffer_pool_;
 #endif
   std::list<connection> connections_;
-  boost::lockfree::spsc_queue<utility::sample> sample_queue_;
+  boost::lockfree::spsc_queue<sample> sample_queue_;
 };

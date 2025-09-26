@@ -43,10 +43,7 @@ namespace bsd
 
   socket::~socket()
   {
-    if (sock_fd_ >= 0)
-    {
-      ::close(sock_fd_);
-    }
+    close();
   }
 
   socket::socket(socket&& other) noexcept : sock_fd_{std::exchange(other.sock_fd_, -1)}
@@ -66,6 +63,15 @@ namespace bsd
     }
 
     return *this;
+  }
+
+  void socket::close()
+  {
+    if (sock_fd_ >= 0)
+    {
+      ::close(sock_fd_);
+      sock_fd_ = -1;
+    }
   }
 
   void socket::connect(std::string const& host, std::string const& port)

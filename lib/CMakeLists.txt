@@ -37,11 +37,8 @@ target_include_directories(rasio_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 
 add_library(utility_lib
-    utility/metric_hud.cpp
     utility/mmap_buffer_array.cpp
     utility/logger.cpp
 )
 
 target_include_directories(utility_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-find_package(Boost REQUIRED COMPONENTS chrono)
-target_link_libraries(utility_lib PUBLIC hdr_histogram::hdr_histogram Boost::chrono)

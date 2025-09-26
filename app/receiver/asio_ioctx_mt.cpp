@@ -1,5 +1,5 @@
-#include "../common/utils.hpp"
-#include <utility/metric_hud.hpp>
+#include "utils.hpp"
+#include "metric_hud.hpp"
 #include <rasio/tcp.hpp>
 using net = rasio::tcp;
 
@@ -115,7 +115,7 @@ int main(int argc, char** argv)
     }
 
     auto collect_metric = [&conns, &conns_lock] {
-      utility::metric total_metric{};
+      metric total_metric{};
 
       std::lock_guard<std::mutex> lg{conns_lock};
       for (auto const& conn : conns)
@@ -127,7 +127,7 @@ int main(int argc, char** argv)
       return total_metric;
     };
 
-    utility::metric_hud hud{std::chrono::seconds{5}, collect_metric};
+    metric_hud hud{std::chrono::seconds{5}, collect_metric};
 
     while (!shutdown_flag)
     {

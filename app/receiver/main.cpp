@@ -1,13 +1,12 @@
 #include "worker.hpp"
-#include "../common/utils.hpp"
-#include <utility/metric_hud.hpp>
+#include "utils.hpp"
+#include "metric_hud.hpp"
 #include <utility/logger.hpp>
 
 #include <CLI/CLI.hpp>
 #include <magic_enum/magic_enum.hpp>
 
 #include <atomic>
-#include <csignal>
 #include <functional>
 #include <iostream>
 #include <memory>
@@ -15,13 +14,6 @@
 #include <thread>
 #include <vector>
 #include <future>
-
-std::atomic<int> shutdown_counter = 1;
-
-void signal_handler(int /* signum */)
-{
-  shutdown_counter = -1;
-}
 
 int main(int argc, char** argv)
 {
@@ -80,8 +72,11 @@ int main(int argc, char** argv)
   app.add_option("--shutdown-on-disconnect", cfg.shutdown_on_disconnect, "Shutdown server when a client disconnects")
     ->default_val(false);
 
-  bool metrics_hud;
-  app.add_option("-M,--metrics-hud", metrics_hud, "Enable metrics HUD display")->default_val(true);
+  int metric_hud_interval_secs;
+  app
+    .add_option(
+      "-M,--metric-hud-interval-secs", metric_hud_interval_secs, "Metric HUD interval in seconds, 0 for disabled")
+    ->default_val(5);
 
 #ifdef IO_URING_API
   app.add_option("-z,--zerocopy", cfg.zerocopy, "Use zerocopy send or not")->default_val(true);
@@ -102,6 +97,8 @@ int main(int argc, char** argv)
 
   CLI11_PARSE(app, argc, argv);
 
+  std::atomic<int>& shutdown_counter = setup_signal_handlers();
+
   if (num_workers <= 0)
   {
     std::cerr << "Number of workers must be greater than 0." << std::endl;
@@ -113,9 +110,6 @@ int main(int argc, char** argv)
     shutdown_counter = num_workers;
     cfg.shutdown_counter = &shutdown_counter;
   }
-
-  signal(SIGINT, signal_handler);
-  signal(SIGTERM, signal_handler);
 
   try
   {
@@ -171,8 +165,8 @@ int main(int argc, char** argv)
 
     std::cout << "Main thread acceptor listening on " << address_str << std::endl;
 
-    auto collect_metric = [&workers] {
-      utility::metric total_metric{};
+    auto metric_hud = setup_metric_hud(std::chrono::seconds{metric_hud_interval_secs}, [&workers] {
+      metric total_metric{};
       total_metric.init_histogram();
 
       for (auto& worker_ptr : workers)
@@ -189,22 +183,15 @@ int main(int argc, char** argv)
       }
 
       return total_metric;
-    };
-
-    auto hud = std::optional<utility::metric_hud>{};
-
-    if (metrics_hud)
-    {
-      hud.emplace(std::chrono::seconds{5}, collect_metric);
-    }
+    });
 
     while (shutdown_counter > 0)
     {
       io_ctx.run_for(std::chrono::milliseconds{1000});
 
-      if (metrics_hud)
+      if (metric_hud)
       {
-        hud->tick();
+        metric_hud->tick();
       }
 #ifdef ASIO_API
       io_ctx.restart();
@@ -224,6 +211,16 @@ int main(int argc, char** argv)
     {
       std::cout << "All clients disconnected, server stopped." << std::endl;
     }
+
+    std::cout << "Server has shut down gracefully." << std::endl;
+
+    std::cout << "Total messages received: "
+              << std::accumulate(
+                   workers.begin(),
+                   workers.end(),
+                   0ul,
+                   [](auto sum, auto& worker) { return sum + worker->get_metrics().msgs; })
+              << std::endl;
   }
   catch (std::exception const& e)
   {
@@ -231,6 +228,5 @@ int main(int argc, char** argv)
     return 1;
   }
 
-  std::cout << "Server has shut down gracefully." << std::endl;
   return 0;
 }

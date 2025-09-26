@@ -1,7 +1,7 @@
 #include "worker.hpp"
-#include "../common/metadata.hpp"
-#include "../common/utils.hpp"
-#include <utility/metric_hud.hpp>
+#include "metadata.hpp"
+#include "utils.hpp"
+#include "metric_hud.hpp"
 
 #include <CLI/CLI.hpp>
 #include <atomic>
@@ -102,7 +102,7 @@ int main(int argc, char** argv)
       pingponger.add_connection(std::move(sock), msg_size);
       pingponger.send_initial_message();
 
-      utility::metric_hud hud{std::chrono::seconds{5}};
+      metric_hud hud{std::chrono::seconds{5}};
 
       std::thread t{[&] {
         while (!shutdown_flag.load(std::memory_order::relaxed))
@@ -113,7 +113,7 @@ int main(int argc, char** argv)
             //    std::cout << queue.read_available()  << std::endl;
 
             auto const now = boost::chrono::process_cpu_clock::now();
-            queue.consume_all([&](utility::sample const& sample) { hud.collect(sample, now); });
+            queue.consume_all([&](sample const& sample) { hud.collect(sample, now); });
           }
         }
       }};
