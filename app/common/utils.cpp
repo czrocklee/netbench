@@ -1,4 +1,9 @@
 #include "utils.hpp"
+#include "build_info.hpp"
+#include <utility/machine_info.hpp>
+
+#include <boost/algorithm/string/join.hpp>
+#include <nlohmann/json.hpp>
 
 #include <thread>
 #include <pthread.h>
@@ -8,6 +13,7 @@
 #include <string>
 #include <stdexcept>
 #include <csignal>
+#include <fstream>
 
 void parse_address(std::string const& full_address, std::string& host, std::string& port)
 {
@@ -66,4 +72,32 @@ std::optional<metric_hud> setup_metric_hud(std::chrono::seconds interval, std::m
   {
     return std::nullopt;
   }
+}
+
+void dump_run_metadata(
+  std::filesystem::path const& path,
+  std::vector<std::string> const& cmd_args,
+  std::vector<std::string> const& tags)
+{
+  auto j = nlohmann::json{};
+  j["git_describe"] = build_info::git_describe;
+  j["git_commit"] = build_info::git_commit;
+  j["build_type"] = build_info::build_type;
+  j["compiler_id"] = build_info::compiler_id;
+  j["compiler_ver"] = build_info::compiler_ver;
+  j["build_time_utc"] = build_info::build_time_utc;
+  j["cmdline"] = boost::algorithm::join(cmd_args, " ");
+  j["tags"] = tags;
+
+  auto const mi = utility::collect_machine_info();
+  j["machine"] = {
+    {"kernel", mi.kernel},
+    {"cpu_model", mi.cpu_model},
+    {"hw_threads", mi.hw_threads},
+    {"cpuset", mi.cpuset},
+    {"os_name", mi.os_name},
+    {"os_version", mi.os_version}};
+
+  auto ofs = std::ofstream{path};
+  ofs << j.dump(2) << std::endl;
 }

@@ -15,7 +15,9 @@
 #include <vector>
 #include <future>
 
-int main(int argc, char** argv)
+#include <filesystem>
+
+int main(int argc, char const* argv[])
 {
   CLI::App app{"C++ TCP receiver"};
 
@@ -41,7 +43,7 @@ int main(int argc, char** argv)
 
   app
     .add_option(
-      "-C,--collect-latency-every-n-samples",
+      "-c,--collect-latency-every-n-samples",
       cfg.collect_latency_every_n_samples,
       "Collect latency metrics every n samples")
     ->default_val(0);
@@ -69,23 +71,30 @@ int main(int argc, char** argv)
     ->default_val(0)
     ->transform(CLI::AsSizeValue(false));
 
-  app.add_option("--shutdown-on-disconnect", cfg.shutdown_on_disconnect, "Shutdown server when a client disconnects")
-    ->default_val(false);
+  app.add_flag("-d,--shutdown-on-disconnect", cfg.shutdown_on_disconnect, "Shutdown server when a client disconnects");
+
+  // results and metadata
+  std::string results_dir;
+  app.add_option("-r,--results-dir", results_dir, "Directory to write run outputs (run.json, summaries, histograms)")
+    ->default_val("");
+
+  std::vector<std::string> tags;
+  app.add_option("--tag", tags, "User tags (repeatable: --tag k=v)");
 
   int metric_hud_interval_secs;
   app
     .add_option(
-      "-M,--metric-hud-interval-secs", metric_hud_interval_secs, "Metric HUD interval in seconds, 0 for disabled")
+      "-m,--metric-hud-interval-secs", metric_hud_interval_secs, "Metric HUD interval in seconds, 0 for disabled")
     ->default_val(5);
 
 #ifdef IO_URING_API
   app.add_option("-z,--zerocopy", cfg.zerocopy, "Use zerocopy send or not")->default_val(true);
 
-  app.add_option("-c,--buffer-count", cfg.buffer_count, "Number of buffers in pool prepared for each worker")
+  app.add_option("--buffer-count", cfg.buffer_count, "Number of buffers in pool prepared for each worker")
     ->default_val(2048)
     ->transform(CLI::AsSizeValue(false));
 
-  app.add_option("-d,--uring-depth", cfg.uring_depth, "io_uring queue depth")
+  app.add_option("--uring-depth", cfg.uring_depth, "io_uring queue depth")
     ->default_val(1024 * 16)
     ->transform(CLI::AsSizeValue(false));
 
@@ -95,6 +104,7 @@ int main(int argc, char** argv)
     ->transform(CLI::AsSizeValue(false));
 #endif
 
+  std::vector<std::string> args{argv + 1, argv + argc};
   CLI11_PARSE(app, argc, argv);
 
   std::atomic<int>& shutdown_counter = setup_signal_handlers();
@@ -179,7 +189,7 @@ int main(int argc, char** argv)
           prom.set_value();
         });
 
-        fut.get();
+        fut.wait_for(std::chrono::seconds{1});
       }
 
       return total_metric;
@@ -213,6 +223,20 @@ int main(int argc, char** argv)
     }
 
     std::cout << "Server has shut down gracefully." << std::endl;
+
+    if (!results_dir.empty())
+    {
+      auto const dir = std::filesystem::path{results_dir};
+
+      if (!std::filesystem::exists(dir))
+      {
+        std::filesystem::create_directories(dir);
+      }
+
+      auto run_file = dir / "run.json";
+      dump_run_metadata(run_file, args, tags);
+      std::cout << "Run metadata written to " << run_file << std::endl;
+    }
 
     std::cout << "Total messages received: "
               << std::accumulate(

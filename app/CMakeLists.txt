@@ -1,8 +1,32 @@
-# Receiver targets
-set(RECEIVER_SOURCES
-    receiver/main.cpp
-    receiver/worker.cpp
-)
+# Generate build info header
+include(CheckIncludeFile)
+find_package(Git QUIET)
+if(GIT_FOUND)
+    execute_process(COMMAND ${GIT_EXECUTABLE} -C ${CMAKE_SOURCE_DIR} describe --always --dirty
+        OUTPUT_VARIABLE GIT_DESCRIBE OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+    execute_process(COMMAND ${GIT_EXECUTABLE} -C ${CMAKE_SOURCE_DIR} rev-parse HEAD
+        OUTPUT_VARIABLE GIT_COMMIT OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+else()
+    set(GIT_DESCRIBE "unknown")
+    set(GIT_COMMIT "unknown")
+endif()
+
+if(CMAKE_CONFIGURATION_TYPES)
+    set(BUILD_TYPE "$<CONFIG>")
+else()
+    if(NOT CMAKE_BUILD_TYPE)
+        set(CMAKE_BUILD_TYPE "Release")
+    endif()
+    set(BUILD_TYPE "${CMAKE_BUILD_TYPE}")
+endif()
+
+set(CXX_COMPILER_ID "${CMAKE_CXX_COMPILER_ID}")
+set(CXX_COMPILER_VERSION "${CMAKE_CXX_COMPILER_VERSION}")
+string(TIMESTAMP BUILD_TIMESTAMP_UTC "%Y-%m-%dT%H:%M:%SZ" UTC)
+
+configure_file(common/build_info.hpp.in
+    ${CMAKE_BINARY_DIR}/generated/build_info.hpp @ONLY)
+include_directories(${CMAKE_BINARY_DIR}/generated)
 
 add_library(common_lib STATIC
     common/utils.cpp
@@ -10,7 +34,14 @@ add_library(common_lib STATIC
 )
 target_include_directories(common_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/common)
 find_package(Boost REQUIRED COMPONENTS chrono)
-target_link_libraries(common_lib PRIVATE hdr_histogram::hdr_histogram Boost::chrono)
+target_link_libraries(common_lib PRIVATE utility_lib hdr_histogram::hdr_histogram Boost::chrono)
+
+
+# Receiver targets
+set(RECEIVER_SOURCES
+    receiver/main.cpp
+    receiver/worker.cpp
+)
 
 add_executable(uring_receiver ${RECEIVER_SOURCES})
 target_compile_definitions(uring_receiver PRIVATE IO_URING_API)

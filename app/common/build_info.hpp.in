@@ -1,0 +1,11 @@
+#pragma once
+
+namespace build_info
+{
+  inline constexpr char const* git_describe = "@GIT_DESCRIBE@";
+  inline constexpr char const* git_commit = "@GIT_COMMIT@";
+  inline constexpr char const* build_type = "@BUILD_TYPE@";
+  inline constexpr char const* compiler_id = "@CXX_COMPILER_ID@";
+  inline constexpr char const* compiler_ver = "@CXX_COMPILER_VERSION@";
+  inline constexpr char const* build_time_utc = "@BUILD_TIMESTAMP_UTC@";
+}

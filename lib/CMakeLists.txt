@@ -39,6 +39,7 @@ target_include_directories(rasio_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 add_library(utility_lib
     utility/mmap_buffer_array.cpp
     utility/logger.cpp
+    utility/machine_info.cpp
 )
 
 target_include_directories(utility_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

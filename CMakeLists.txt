@@ -28,6 +28,7 @@ find_package(CLI11 REQUIRED)
 find_package(Boost REQUIRED COMPONENTS headers)
 find_package(hdr_histogram REQUIRED)
 find_package(magic_enum REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
 
 add_subdirectory(app)
 add_subdirectory(lib)

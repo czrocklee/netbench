@@ -42,8 +42,8 @@ public:
     int socket_recv_buffer_size;
     int socket_send_buffer_size;
     int collect_latency_every_n_samples;
-    bool shutdown_on_disconnect;
-    std::atomic<int>* shutdown_counter;
+    bool shutdown_on_disconnect = false;
+    std::atomic<int>* shutdown_counter = nullptr;
 #ifdef IO_URING_API
     bool zerocopy;
     std::uint32_t uring_depth;
