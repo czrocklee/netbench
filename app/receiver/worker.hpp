@@ -64,7 +64,6 @@ public:
   bool post(std::move_only_function<void()> task);
 
   metric const& get_metrics() const { return metrics_; }
-
   net::io_context& get_io_context() { return io_ctx_; }
 
 private:
@@ -99,6 +98,4 @@ private:
   std::list<connection> connections_;
   boost::lockfree::spsc_queue<std::move_only_function<void()>> pending_task_queue_;
   std::thread thread_;
-  std::chrono::steady_clock::time_point conn_begin_time_{};
-  std::chrono::steady_clock::time_point conn_end_time_{};
 };

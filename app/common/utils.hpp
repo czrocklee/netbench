@@ -23,3 +23,5 @@ void dump_run_metadata(
   std::filesystem::path const& path,
   std::vector<std::string> const& cmd_args,
   std::vector<std::string> const& tags);
+
+void dump_metrics(std::filesystem::path const& path, std::vector<metric const*> const& metrics);

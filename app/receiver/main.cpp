@@ -104,7 +104,6 @@ int main(int argc, char const* argv[])
     ->transform(CLI::AsSizeValue(false));
 #endif
 
-  std::vector<std::string> args{argv + 1, argv + argc};
   CLI11_PARSE(app, argc, argv);
 
   std::atomic<int>& shutdown_counter = setup_signal_handlers();
@@ -233,9 +232,20 @@ int main(int argc, char const* argv[])
         std::filesystem::create_directories(dir);
       }
 
-      auto run_file = dir / "run.json";
-      dump_run_metadata(run_file, args, tags);
-      std::cout << "Run metadata written to " << run_file << std::endl;
+      auto const metadata_file = dir / "metadata.json";
+      dump_run_metadata(metadata_file, std::vector<std::string>{argv, argv + argc}, tags);
+      std::cout << "Run metadata written to " << metadata_file << std::endl;
+
+      auto const metrics_file = dir / "metrics.json";
+      auto all_metrics = std::vector<metric const*>{};
+
+      for (auto& w : workers)
+      {
+        all_metrics.push_back(&w->get_metrics());
+      }
+
+      dump_metrics(metrics_file, all_metrics);
+      std::cout << "Metrics written to " << metrics_file << std::endl;
     }
 
     std::cout << "Total messages received: "

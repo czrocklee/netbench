@@ -77,6 +77,7 @@ in
       hdrhistogram-c-lib
       zlib
       asio-lib
+      nlohmann_json
     ];
     shellHook = ''
       echo "Using nixpkgs pinned to NixOS 25.05 (stable release)"

@@ -120,7 +120,7 @@ void worker::add_connection(net::socket sock)
 
         if (config_.shutdown_on_disconnect && connections_.empty())
         {
-          conn_end_time_ = std::chrono::steady_clock::now();
+          metrics_.end_ts = std::chrono::steady_clock::now();
           config_.shutdown_counter->fetch_sub(1);
           stop_flag_.store(true, std::memory_order::relaxed);
         }
@@ -131,9 +131,9 @@ void worker::add_connection(net::socket sock)
       on_data(*iter, data);
     });
 
-    if (conn_begin_time_ == std::chrono::steady_clock::time_point{})
+    if (metrics_.begin_ts == std::chrono::steady_clock::time_point{})
     {
-      conn_begin_time_ = std::chrono::steady_clock::now();
+      metrics_.begin_ts = std::chrono::steady_clock::now();
     }
   }
   catch (std::exception const& e)

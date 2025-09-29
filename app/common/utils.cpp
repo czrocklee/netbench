@@ -101,3 +101,22 @@ void dump_run_metadata(
   auto ofs = std::ofstream{path};
   ofs << j.dump(2) << std::endl;
 }
+
+void dump_metrics(std::filesystem::path const& path, std::vector<metric const*> const& metrics)
+{
+  auto j = nlohmann::json::array();
+
+  for (auto const* m : metrics)
+  {
+    j.push_back({
+      {"ops", m->ops},
+      {"msgs", m->msgs},
+      {"bytes", m->bytes},
+      {"begin_ts", m->begin_ts.time_since_epoch().count()},
+      {"end_ts", m->end_ts.time_since_epoch().count()},
+    });
+  }
+
+  auto ofs = std::ofstream{path};
+  ofs << j.dump(2) << std::endl;
+}

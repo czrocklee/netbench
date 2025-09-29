@@ -20,6 +20,8 @@ struct metric
   std::uint64_t ops = 0;
   std::uint64_t msgs = 0;
   std::uint64_t bytes = 0;
+  std::chrono::steady_clock::time_point begin_ts = {};
+  std::chrono::steady_clock::time_point end_ts = {};
   std::unique_ptr<::hdr_histogram, decltype(&::hdr_close)> latency_hist{nullptr, ::hdr_close};
 };
 
