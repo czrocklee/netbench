@@ -22,7 +22,7 @@ int main(int argc, char** argv)
   app.add_option("-b,--bind-address", bind_address, "Bind address")->default_val("");
 
   int conns = 1;
-  app.add_option("-c,--conns", conns, "Number of connections per sender")->default_val(1);
+  app.add_option("-c,--conns-per-sender", conns, "Number of connections per sender")->default_val(1);
 
   int senders = 1;
   app.add_option("-s,--senders", senders, "Number of senders")->default_val(1);

@@ -66,6 +66,12 @@ in
       # tooling
       bmon
       clang-tools
+      bpftrace
+
+      # python for benchmark scripts
+      python3
+      python3Packages.matplotlib
+      python3Packages.plotly
 
       # dependencies
       liburing-lib

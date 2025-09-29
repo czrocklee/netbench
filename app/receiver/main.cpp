@@ -99,7 +99,7 @@ int main(int argc, char const* argv[])
     ->transform(CLI::AsSizeValue(false));
 
 #elifdef BSD_API
-  app.add_option("-r,--read-limit", cfg.read_limit, "Optional read limit for BSD API (0 for no limit)")
+  app.add_option("--read-limit", cfg.read_limit, "Optional read limit for BSD API (0 for no limit)")
     ->default_val(1024 * 64)
     ->transform(CLI::AsSizeValue(false));
 #endif
