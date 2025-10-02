@@ -82,11 +82,18 @@ def infer_var_from_dir(name: str) -> Tuple[str, int]:
 
 
 def gather_results(results_dir: Path, scenario_filter: Optional[List[str]] = None,
-                   impl_filter: Optional[List[str]] = None) -> Tuple[Dict[str, Dict[int, Dict[str, RunPoint]]], Dict[str, List[int]]]:
-    # Returns: scenarios -> var_val -> impl -> RunPoint
-    # and scenarios -> sorted var values
+                   impl_filter: Optional[List[str]] = None) -> Tuple[
+                       Dict[str, Dict[int, Dict[str, RunPoint]]],
+                       Dict[str, List[int]],
+                       Dict[str, str]
+                   ]:
+    # Returns:
+    #  - scenarios -> var_val -> impl -> RunPoint
+    #  - scenarios -> sorted var values
+    #  - scenarios -> subtitle (e.g., "CPU | kernel")
     scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]] = {}
     var_order: Dict[str, List[int]] = {}
+    subtitles: Dict[str, str] = {}
 
     for sc_dir in sorted(results_dir.iterdir()):
         if not sc_dir.is_dir():
@@ -124,6 +131,28 @@ def gather_results(results_dir: Path, scenario_filter: Optional[List[str]] = Non
                     continue
 
                 total_bytes, total_msgs, total_ops, bmin, emax = load_metrics(metrics_path)
+                # Read a subtitle once per scenario from metadata.json (CPU and kernel/OS)
+                try:
+                    if sc_name not in subtitles:
+                        meta = json.loads(meta_path.read_text())
+                        m = meta.get("machine", {})
+                        cpu = str(m.get("cpu_model", "")).strip()
+                        kernel = str(m.get("kernel", "")).strip()
+                        os_name = str(m.get("os_name", "")).strip()
+                        os_version = str(m.get("os_version", "")).strip()
+                        # Prefer showing OS name with kernel if kernel doesn't already contain it
+                        kernel_label = ""
+                        if kernel:
+                            if os_name and os_name.lower() not in kernel.lower():
+                                kernel_label = f"{os_name} {kernel}".strip()
+                            else:
+                                kernel_label = kernel
+                        elif os_name or os_version:
+                            kernel_label = f"{os_name} {os_version}".strip()
+                        if cpu or kernel_label:
+                            subtitles[sc_name] = " | ".join([s for s in [cpu, kernel_label] if s])
+                except Exception:
+                    pass
                 duration_sec = None
                 if bmin is not None and emax is not None and emax > bmin:
                     # assume steady_clock nanoseconds
@@ -148,18 +177,18 @@ def gather_results(results_dir: Path, scenario_filter: Optional[List[str]] = Non
     for sc_name, vmap in scenarios.items():
         if not var_order.get(sc_name):
             var_order[sc_name] = sorted(vmap.keys())
-    return scenarios, var_order
+    return scenarios, var_order, subtitles
 
 
 def plot_matplotlib(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_order: Dict[str, List[int]],
-                    impl_order: List[str], metric: str, out_dir: Path,
-                    baseline_impl: Optional[str] = None) -> List[Path]:
+                    scenario_subtitles: Dict[str, str], impl_order: List[str], metric: str, out_dir: Path,
+                    baseline_impl: Optional[str] = None, debug_layout: bool = False) -> List[Path]:
     import matplotlib.pyplot as plt
     out_files: List[Path] = []
     out_dir.mkdir(parents=True, exist_ok=True)
 
     for sc_name, vmap in scenarios.items():
-        xs = var_order[sc_name]
+        xs = var_order.get(sc_name, sorted(vmap.keys()))
         n_groups = len(xs)
         n_impls = len(impl_order)
         width = 0.8 / max(n_impls, 1)
@@ -200,8 +229,6 @@ def plot_matplotlib(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_or
                         texts.append("")
 
             positions = [p + idx * width for p in base_positions]
-            #color = COLOR_MAP.get(impl, None)
-            #ax.bar(positions, vals, width=width, label=impl, color=color, edgecolor="#333333")
             bars = ax.bar(positions, vals, width=width, label=impl, edgecolor="#333333")
             if baseline_impl:
                 for rect, txt in zip(bars, texts):
@@ -214,16 +241,92 @@ def plot_matplotlib(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_or
         # X ticks centered under each group
         centers = [p + (n_impls - 1) * width / 2 for p in base_positions]
         ax.set_xticks(centers)
-        ax.set_xticklabels([f"{next(iter(vmap.values())).get(next(iter(next(iter(vmap.values())).keys()))).var_key if vmap else 'var'} = {x}" if vmap else str(x) for x in xs])
+        # Determine var key name for labeling
+        var_key_name = "var"
+        try:
+            if vmap:
+                any_impl_map = next(iter(vmap.values()))
+                if any_impl_map:
+                    any_rp = next(iter(any_impl_map.values()))
+                    var_key_name = any_rp.var_key
+        except Exception:
+            pass
+        ax.set_xticklabels([f"{var_key_name} = {x}" for x in xs])
 
         y_label = {
             "msgs_per_sec": "Messages per Second",
         }.get(metric, "Throughput (Gbps)")
         ax.set_ylabel(y_label)
-        ax.set_title(sc_name)
+
+        subtitle = scenario_subtitles.get(sc_name)
+        supt: Optional[object] = None
+        subtxt: Optional[object] = None
+        # Larger main title centered; subtitle centered directly beneath, above the plot
+        try:
+            supt = fig.suptitle(sc_name, fontsize=16, y=0.975)
+            if subtitle:
+                # Subtitle centered below main title
+                subtxt = fig.text(0.98, 0.855, subtitle, ha='right', va='top', fontsize=10, color='#555')
+                # Bring plot area closer to titles (larger 'top' means less reserved space)
+                fig.subplots_adjust(top=0.92)
+            else:
+                fig.subplots_adjust(top=0.95)
+        except Exception:
+            # Fallback: use axes title only
+            ax.set_title(sc_name)
+
         ax.legend()
         ax.grid(axis='y', linestyle='--', alpha=0.3)
-        fig.tight_layout()
+        try:
+            # Reserve just enough space for the titles
+            fig.tight_layout(rect=[0, 0, 1, 0.95] if subtitle else [0, 0, 1, 0.97])
+        except Exception:
+            fig.tight_layout()
+
+        # Debug overlay: draw bounding boxes for figure, axes, legend, titles
+        if debug_layout:
+            try:
+                from matplotlib.patches import Rectangle
+                fig.canvas.draw()  # ensure renderer is ready
+                renderer = fig.canvas.get_renderer()
+
+                def add_rect(x0, y0, w, h, color):
+                    rect = Rectangle((x0, y0), w, h, transform=fig.transFigure,
+                                     fill=False, linewidth=1, linestyle='--', edgecolor=color, zorder=1000)
+                    fig.add_artist(rect)
+
+                # Figure border
+                add_rect(0, 0, 1, 1, '#f00')
+                # Axes box
+                pos = ax.get_position()
+                add_rect(pos.x0, pos.y0, pos.width, pos.height, '#0a0')
+                # Legend box
+                leg = ax.get_legend()
+                if leg is not None:
+                    try:
+                        bbox = leg.get_window_extent(renderer=renderer)
+                        inv = fig.transFigure.inverted().transform
+                        (x0, y0) = inv((bbox.x0, bbox.y0))
+                        (x1, y1) = inv((bbox.x1, bbox.y1))
+                        add_rect(x0, y0, x1 - x0, y1 - y0, '#f0f')
+                        leg.get_frame().set_linewidth(1.0)
+                        leg.get_frame().set_edgecolor('#f0f')
+                    except Exception:
+                        pass
+                # Titles
+                for t, col in [(supt, '#00f'), (subtxt, '#0ff')]:
+                    if t is None:
+                        continue
+                    try:
+                        tb = t.get_window_extent(renderer=renderer)
+                        inv = fig.transFigure.inverted().transform
+                        (x0, y0) = inv((tb.x0, tb.y0))
+                        (x1, y1) = inv((tb.x1, tb.y1))
+                        add_rect(x0, y0, x1 - x0, y1 - y0, col)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
 
         out_file = out_dir / f"{sc_name}.svg"
         fig.savefig(out_file, format="svg")
@@ -234,15 +337,15 @@ def plot_matplotlib(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_or
 
 
 def plot_html(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_order: Dict[str, List[int]],
-              impl_order: List[str], metric: str, out_dir: Path,
-              baseline_impl: Optional[str] = None) -> List[Path]:
+              scenario_subtitles: Dict[str, str], impl_order: List[str], metric: str, out_dir: Path,
+              baseline_impl: Optional[str] = None, debug_layout: bool = False) -> List[Path]:
     # Try Plotly for interactive HTML; fallback to embedding SVGs only if Plotly is missing
     out_dir.mkdir(parents=True, exist_ok=True)
     try:
         import plotly.graph_objects as go  # type: ignore
     except ImportError:
         print("Plotly is not installed; falling back to static SVG wrapped in HTML.")
-        svgs = plot_matplotlib(scenarios, var_order, impl_order, metric, out_dir, baseline_impl=baseline_impl)
+        svgs = plot_matplotlib(scenarios, var_order, scenario_subtitles, impl_order, metric, out_dir, baseline_impl=baseline_impl, debug_layout=debug_layout)
         out_files: List[Path] = []
         for svg in svgs:
             html_path = svg.with_suffix('.html')
@@ -294,13 +397,34 @@ def plot_html(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_order: D
             "msgs": "Messages",
             "ops": "Ops",
         }.get(metric, "Throughput (Gbps)")
+        subtitle = scenario_subtitles.get(sc_name)
+        # Use two-line title for Plotly: main title then subtitle beneath
+        if subtitle:
+            title_text = f"{sc_name}<br><span style='font-size:0.9em;color:#555'>{subtitle}</span>"
+        else:
+            title_text = sc_name
         fig.update_layout(
             barmode='group',
-            title=sc_name,
+            title={'text': title_text},
             xaxis_title=vmap[next(iter(vmap))][next(iter(vmap[next(iter(vmap))]))].var_key if vmap else "var",
             yaxis_title=y_label,
             legend_title="Implementation",
+            margin=dict(t=70)
         )
+        if debug_layout:
+            # Paper border
+            fig.add_shape(type='rect', xref='paper', yref='paper', x0=0, y0=0, x1=1, y1=1,
+                          line=dict(color='red', width=1, dash='dot'))
+            # Plot (axes) domain
+            try:
+                dx = getattr(fig.layout.xaxis, 'domain', [0, 1])
+                dy = getattr(fig.layout.yaxis, 'domain', [0, 1])
+                fig.add_shape(type='rect', xref='paper', yref='paper', x0=dx[0], y0=dy[0], x1=dx[1], y1=dy[1],
+                              line=dict(color='green', width=1, dash='dot'))
+            except Exception:
+                pass
+            # Legend border
+            fig.update_layout(legend=dict(bordercolor='#f0f', borderwidth=1))
         out_file = out_dir / f"{sc_name}.html"
         fig.write_html(out_file, include_plotlyjs='cdn', full_html=True)
         out_files.append(out_file)
@@ -316,9 +440,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--relative-to", default="bsd", help="Baseline implementation for percentage labels; use 'none' to disable")
     ap.add_argument("--output", default="svg", choices=["svg", "html"])
     ap.add_argument("--out-dir", type=Path, default=Path("results/plots"))
+    ap.add_argument("--debug-layout", action="store_true", help="Draw bounding boxes for figure parts (titles/axes/legend) to debug layout")
     args = ap.parse_args(argv)
 
-    scenarios, var_order = gather_results(args.results_dir, args.scenario, args.impl)
+    scenarios, var_order, scenario_subtitles = gather_results(args.results_dir, args.scenario, args.impl)
     if not scenarios:
         print(f"No results found under {args.results_dir}")
         return 1
@@ -334,9 +459,9 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     baseline_impl = None if (args.relative_to and args.relative_to.lower() == 'none') else args.relative_to
     if args.output == "svg":
-        files = plot_matplotlib(scenarios, var_order, impl_order, args.metric, args.out_dir, baseline_impl=baseline_impl)
+        files = plot_matplotlib(scenarios, var_order, scenario_subtitles, impl_order, args.metric, args.out_dir, baseline_impl=baseline_impl, debug_layout=args.debug_layout)
     else:
-        files = plot_html(scenarios, var_order, impl_order, args.metric, args.out_dir, baseline_impl=baseline_impl)
+        files = plot_html(scenarios, var_order, scenario_subtitles, impl_order, args.metric, args.out_dir, baseline_impl=baseline_impl, debug_layout=args.debug_layout)
 
     print("Wrote:")
     for f in files:

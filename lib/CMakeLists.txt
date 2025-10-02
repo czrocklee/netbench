@@ -28,13 +28,20 @@ target_include_directories(uring_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(uring_lib PUBLIC bsd_lib uring)
 
 
-add_library(rasio_lib 
+set(RASIO_SOURCES
     rasio/connector.cpp 
     rasio/acceptor.cpp
 )
 
-target_include_directories(rasio_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
+add_library(rasio_lib ${RASIO_SOURCES})
+target_include_directories(rasio_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_definitions(rasio_lib PUBLIC ASIO_STANDALONE ASIO_NO_DEPRECATED)
+
+add_library(rasio_uring_lib ${RASIO_SOURCES})
+target_include_directories(rasio_uring_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_definitions(rasio_uring_lib PUBLIC ASIO_STANDALONE ASIO_NO_DEPRECATED ASIO_HAS_IO_URING ASIO_DISABLE_EPOLL)
+target_link_libraries(rasio_uring_lib PUBLIC uring)
 
 add_library(utility_lib
     utility/mmap_buffer_array.cpp

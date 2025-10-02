@@ -107,7 +107,6 @@ int main(int argc, char** argv)
       std::thread t{[&] {
         while (!shutdown_flag.load(std::memory_order::relaxed))
         {
-
           if (auto& queue = pingponger.get_sample_queue(); queue.read_available() > 0)
           {
             //    std::cout << queue.read_available()  << std::endl;
