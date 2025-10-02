@@ -85,6 +85,7 @@ def gather_results(results_dir: Path, scenario_filter: Optional[List[str]] = Non
                    impl_filter: Optional[List[str]] = None) -> Tuple[
                        Dict[str, Dict[int, Dict[str, RunPoint]]],
                        Dict[str, List[int]],
+                       Dict[str, str],
                        Dict[str, str]
                    ]:
     # Returns:
@@ -94,6 +95,7 @@ def gather_results(results_dir: Path, scenario_filter: Optional[List[str]] = Non
     scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]] = {}
     var_order: Dict[str, List[int]] = {}
     subtitles: Dict[str, str] = {}
+    titles: Dict[str, str] = {}
 
     for sc_dir in sorted(results_dir.iterdir()):
         if not sc_dir.is_dir():
@@ -104,6 +106,10 @@ def gather_results(results_dir: Path, scenario_filter: Optional[List[str]] = Non
 
         scj = json.loads(sc_manifest.read_text())
         sc_name = scj.get("name")
+        # Optional friendly title for plots
+        sc_title = scj.get("title") or sc_name
+        if sc_title:
+            titles[sc_name] = sc_title
         if scenario_filter and sc_name not in scenario_filter:
             continue
         var_key = scj.get("var_key")
@@ -177,11 +183,11 @@ def gather_results(results_dir: Path, scenario_filter: Optional[List[str]] = Non
     for sc_name, vmap in scenarios.items():
         if not var_order.get(sc_name):
             var_order[sc_name] = sorted(vmap.keys())
-    return scenarios, var_order, subtitles
+    return scenarios, var_order, subtitles, titles
 
 
 def plot_matplotlib(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_order: Dict[str, List[int]],
-                    scenario_subtitles: Dict[str, str], impl_order: List[str], metric: str, out_dir: Path,
+                    scenario_subtitles: Dict[str, str], scenario_titles: Dict[str, str], impl_order: List[str], metric: str, out_dir: Path,
                     baseline_impl: Optional[str] = None, debug_layout: bool = False) -> List[Path]:
     import matplotlib.pyplot as plt
     out_files: List[Path] = []
@@ -206,9 +212,10 @@ def plot_matplotlib(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_or
                 else:
                     baseline_vals.append(None)
 
-        for idx, impl in enumerate(impl_order):
+        # First pass: compute raw values per impl to determine y-axis scale
+        raw_vals_by_impl: Dict[str, List[float]] = {}
+        for impl in impl_order:
             vals: List[float] = []
-            texts: List[str] = []
             for x in xs:
                 rp = vmap.get(x, {}).get(impl)
                 if not rp:
@@ -219,9 +226,30 @@ def plot_matplotlib(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_or
                     else:
                         v = 0.0
                 vals.append(v)
+            raw_vals_by_impl[impl] = vals
+
+        # Decide scale unit: '', 'k', 'm', 'b'
+        y_max = 0.0
+        for vals in raw_vals_by_impl.values():
+            for v in vals:
+                if math.isfinite(v):
+                    y_max = max(y_max, v)
+        if y_max >= 1e9:
+            scale = 1e9; unit = 'b'
+        elif y_max >= 1e6:
+            scale = 1e6; unit = 'm'
+        elif y_max >= 1e3:
+            scale = 1e3; unit = 'k'
+        else:
+            scale = 1.0; unit = ''
+
+        for idx, impl in enumerate(impl_order):
+            raw_vals = raw_vals_by_impl.get(impl, [])
+            vals_scaled: List[float] = [(v / scale) if math.isfinite(v) else 0.0 for v in raw_vals]
+            texts: List[str] = []
 
             if baseline_impl:
-                for i, v in enumerate(vals):
+                for i, v in enumerate(raw_vals):
                     b = baseline_vals[i] if i < len(baseline_vals) else None
                     if b is not None and b > 0:
                         texts.append(f"{(v / b) * 100:.0f}%")
@@ -229,7 +257,7 @@ def plot_matplotlib(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_or
                         texts.append("")
 
             positions = [p + idx * width for p in base_positions]
-            bars = ax.bar(positions, vals, width=width, label=impl, edgecolor="#333333")
+            bars = ax.bar(positions, vals_scaled, width=width, label=impl, edgecolor="#333333")
             if baseline_impl:
                 for rect, txt in zip(bars, texts):
                     if not txt:
@@ -256,14 +284,21 @@ def plot_matplotlib(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_or
         y_label = {
             "msgs_per_sec": "Messages per Second",
         }.get(metric, "Throughput (Gbps)")
+        if unit:
+            y_label = f"{y_label} ({unit})"
         ax.set_ylabel(y_label)
+        try:
+            ax.ticklabel_format(style='plain', axis='y')
+        except Exception:
+            pass
 
         subtitle = scenario_subtitles.get(sc_name)
         supt: Optional[object] = None
         subtxt: Optional[object] = None
         # Larger main title centered; subtitle centered directly beneath, above the plot
         try:
-            supt = fig.suptitle(sc_name, fontsize=16, y=0.975)
+            main_title = scenario_titles.get(sc_name, sc_name)
+            supt = fig.suptitle(main_title, fontsize=16, y=0.975)
             if subtitle:
                 # Subtitle centered below main title
                 subtxt = fig.text(0.98, 0.855, subtitle, ha='right', va='top', fontsize=10, color='#555')
@@ -273,7 +308,7 @@ def plot_matplotlib(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_or
                 fig.subplots_adjust(top=0.95)
         except Exception:
             # Fallback: use axes title only
-            ax.set_title(sc_name)
+            ax.set_title(scenario_titles.get(sc_name, sc_name))
 
         ax.legend()
         ax.grid(axis='y', linestyle='--', alpha=0.3)
@@ -337,7 +372,7 @@ def plot_matplotlib(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_or
 
 
 def plot_html(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_order: Dict[str, List[int]],
-              scenario_subtitles: Dict[str, str], impl_order: List[str], metric: str, out_dir: Path,
+              scenario_subtitles: Dict[str, str], scenario_titles: Dict[str, str], impl_order: List[str], metric: str, out_dir: Path,
               baseline_impl: Optional[str] = None, debug_layout: bool = False) -> List[Path]:
     # Try Plotly for interactive HTML; fallback to embedding SVGs only if Plotly is missing
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -362,9 +397,11 @@ def plot_html(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_order: D
     for sc_name, vmap in scenarios.items():
         xs = var_order[sc_name]
         fig = go.Figure()
+
+        # First pass: gather raw values by implementation
+        raw_by_impl: Dict[str, List[float]] = {}
         for impl in impl_order:
             ys: List[float] = []
-            texts: List[str] = []
             for x in xs:
                 rp = vmap.get(x, {}).get(impl)
                 if not rp:
@@ -375,20 +412,40 @@ def plot_html(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_order: D
                     else:
                         v = 0.0
                 ys.append(v)
+            raw_by_impl[impl] = ys
 
+        # Decide scale unit based on max
+        y_max = 0.0
+        for ys in raw_by_impl.values():
+            for v in ys:
+                if math.isfinite(v):
+                    y_max = max(y_max, v)
+        if y_max >= 1e9:
+            scale = 1e9; unit = 'b'
+        elif y_max >= 1e6:
+            scale = 1e6; unit = 'm'
+        elif y_max >= 1e3:
+            scale = 1e3; unit = 'k'
+        else:
+            scale = 1.0; unit = ''
+
+        # Plot scaled bars per implementation
+        for impl in impl_order:
+            ys_raw = raw_by_impl.get(impl, [])
+            ys_scaled = [(v / scale) if math.isfinite(v) else 0.0 for v in ys_raw]
+            texts: List[str] = []
             if baseline_impl:
                 for i, x in enumerate(xs):
                     rp_b = vmap.get(x, {}).get(baseline_impl)
                     b = rp_b.msgs_per_sec() if (rp_b and metric == "msgs_per_sec") else None
                     if b is not None and b > 0:
-                        texts.append(f"{(ys[i] / b) * 100:.0f}%")
+                        texts.append(f"{(ys_raw[i] / b) * 100:.0f}%")
                     else:
                         texts.append("")
-            #fig.add_bar(name=impl, x=[str(x) for x in xs], y=ys, marker_color=COLOR_MAP.get(impl))
             if baseline_impl:
-                fig.add_bar(name=impl, x=[str(x) for x in xs], y=ys, text=texts, textposition='outside')
+                fig.add_bar(name=impl, x=[str(x) for x in xs], y=ys_scaled, text=texts, textposition='outside')
             else:
-                fig.add_bar(name=impl, x=[str(x) for x in xs], y=ys)
+                fig.add_bar(name=impl, x=[str(x) for x in xs], y=ys_scaled)
 
         y_label = {
             "throughput_gbps": "Throughput (Gbps)",
@@ -397,12 +454,15 @@ def plot_html(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_order: D
             "msgs": "Messages",
             "ops": "Ops",
         }.get(metric, "Throughput (Gbps)")
+        if unit:
+            y_label = f"{y_label} ({unit})"
         subtitle = scenario_subtitles.get(sc_name)
+        main_title = scenario_titles.get(sc_name, sc_name)
         # Use two-line title for Plotly: main title then subtitle beneath
         if subtitle:
-            title_text = f"{sc_name}<br><span style='font-size:0.9em;color:#555'>{subtitle}</span>"
+            title_text = f"{main_title}<br><span style='font-size:0.9em;color:#555'>{subtitle}</span>"
         else:
-            title_text = sc_name
+            title_text = main_title
         fig.update_layout(
             barmode='group',
             title={'text': title_text},
@@ -443,7 +503,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--debug-layout", action="store_true", help="Draw bounding boxes for figure parts (titles/axes/legend) to debug layout")
     args = ap.parse_args(argv)
 
-    scenarios, var_order, scenario_subtitles = gather_results(args.results_dir, args.scenario, args.impl)
+    scenarios, var_order, scenario_subtitles, scenario_titles = gather_results(args.results_dir, args.scenario, args.impl)
     if not scenarios:
         print(f"No results found under {args.results_dir}")
         return 1
@@ -459,9 +519,9 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     baseline_impl = None if (args.relative_to and args.relative_to.lower() == 'none') else args.relative_to
     if args.output == "svg":
-        files = plot_matplotlib(scenarios, var_order, scenario_subtitles, impl_order, args.metric, args.out_dir, baseline_impl=baseline_impl, debug_layout=args.debug_layout)
+        files = plot_matplotlib(scenarios, var_order, scenario_subtitles, scenario_titles, impl_order, args.metric, args.out_dir, baseline_impl=baseline_impl, debug_layout=args.debug_layout)
     else:
-        files = plot_html(scenarios, var_order, scenario_subtitles, impl_order, args.metric, args.out_dir, baseline_impl=baseline_impl, debug_layout=args.debug_layout)
+        files = plot_html(scenarios, var_order, scenario_subtitles, scenario_titles, impl_order, args.metric, args.out_dir, baseline_impl=baseline_impl, debug_layout=args.debug_layout)
 
     print("Wrote:")
     for f in files:
