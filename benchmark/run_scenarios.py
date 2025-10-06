@@ -39,23 +39,24 @@ def default_scenarios() -> List[Scenario]:
         busy_spin=False,
         echo="none",
         buffer_size=32,
+        max_batch_size=1024,
     )
     return [
         Scenario(
             name="receive_throughput_by_threads",
-            title="Receive Throughput by Threads (msg 32, buf 32)",
+            title="Receive Throughput by Threads (msg_sz=32, buf_size=32)",
             fixed=fixed,
             var_key="workers",
             var_values=[1, 2, 4, 8],
             linkages={"senders": "workers"},
-            implementations=["bsd", "uring", "asio", "asio_uring", "asio_ioctx_mt", "asio_uring_ioctx_mt"],
+            implementations=["bsd", "uring", "asio", "asio_uring"],
         ),
         Scenario(
             name="receive_throughput_by_connections",
-            title="Receive Throughput by Connections (msg 32, buf 1024)",
-            fixed=dc.replace(fixed, buffer_size=1024),
+            title="Receive Throughput by Connections (msg_sz=32, buf_sz=1024)",
+            fixed=dc.replace(fixed, buffer_size=1024, senders=4, max_batch_size=4),
             var_key="conns_per_sender",
-            var_values=[1, 128, 512, 1024],
+            var_values=[1, 32, 128, 256],
             implementations=["bsd", "uring", "asio", "asio_uring"],
         ),
     ]

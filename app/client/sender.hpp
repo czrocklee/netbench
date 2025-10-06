@@ -9,23 +9,29 @@
 #include <chrono>
 #include <random>
 #include <atomic>
+#include <climits> // For IOV_MAX
 
 class sender
 {
 public:
-  sender(int id, int conns, std::size_t msg_size);
+  struct config
+  {
+    int conns;
+    std::size_t msg_size;
+    bool nodelay = false;
+    bool drain = false;
+    int socket_buffer_size = 0;
+    int msgs_per_sec = 0;
+    std::uint64_t stop_after_n_messages = 0;
+    std::uint64_t stop_after_n_seconds = 0;
+    std::size_t max_batch_size = IOV_MAX;
+  };
+
+  sender(int id, config const& cfg);
 
   void connect(std::string const& host, std::string const& port, std::string const& bind_address);
   void start(std::atomic<int>& shutdown_counter);
   void stop();
-  
-  void enable_drain();
-  void set_nodelay(bool enable);
-  void set_socket_buffer_size(int size);
-
-  void set_message_rate(int msgs_per_sec);
-  void stop_after_n_messages(std::uint64_t n) { stop_after_n_messages_ = n; }
-  void stop_after_n_seconds(std::uint64_t n) { stop_after_n_seconds_ = n; }
 
   std::uint64_t total_msgs_sent() const { return total_msgs_sent_.load(std::memory_order_relaxed); }
   std::uint64_t total_send_ops() const { return total_send_ops_.load(std::memory_order_relaxed); }
@@ -35,6 +41,7 @@ private:
   void run_after_n_messages();
   void run_after_n_seconds();
 
+  const config cfg_;
   std::vector<connection> conns_;
   std::atomic<bool> stop_flag_ = false;
   std::jthread _thread;
@@ -42,6 +49,4 @@ private:
   std::chrono::steady_clock::time_point start_time_;
   std::atomic<std::uint64_t> total_send_ops_ = 0;
   std::atomic<std::uint64_t> total_msgs_sent_ = 0;
-  std::uint64_t stop_after_n_messages_ = 0;
-  std::uint64_t stop_after_n_seconds_ = 0;
 };

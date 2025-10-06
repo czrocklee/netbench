@@ -7,13 +7,36 @@
 #include <random>
 #include <thread>
 
-sender::sender(int id, int conns, std::size_t msg_size)
+sender::sender(int id, config const& cfg) : cfg_{cfg}
 {
-  conns_.reserve(conns);
+  conns_.reserve(cfg_.conns);
 
-  for (int i = 0; i < conns; ++i)
+  for (int i = 0; i < cfg_.conns; ++i)
   {
-    conns_.emplace_back(id * 1000 + i, msg_size);
+    conns_.emplace_back(id * 1000 + i, cfg_.msg_size);
+  }
+
+  if (cfg_.msgs_per_sec > 0)
+  {
+    interval_ = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::seconds{1}) / cfg_.msgs_per_sec;
+  }
+
+  for (auto& conn : conns_)
+  {
+    if (cfg_.drain)
+    {
+      conn.enable_drain();
+    }
+
+    if (cfg_.nodelay)
+    {
+      conn.set_nodelay(true);
+    }
+
+    if (cfg_.socket_buffer_size > 0)
+    {
+      conn.set_socket_buffer_size(cfg_.socket_buffer_size);
+    }
   }
 }
 
@@ -32,11 +55,11 @@ void sender::start(std::atomic<int>& shutdown_counter)
                 std::chrono::nanoseconds{std::uniform_int_distribution<std::int64_t>{0, interval_.count()}(rd)};
 
   _thread = std::jthread{[this, &shutdown_counter] {
-    if (stop_after_n_messages_ > 0)
+    if (cfg_.stop_after_n_messages > 0)
     {
       run_after_n_messages();
     }
-    else if (stop_after_n_seconds_ > 0)
+    else if (cfg_.stop_after_n_seconds > 0)
     {
       run_after_n_seconds();
     }
@@ -64,35 +87,6 @@ void sender::stop()
   }
 }
 
-void sender::enable_drain()
-{
-  for (auto& conn : conns_)
-  {
-    conn.enable_drain();
-  }
-}
-
-void sender::set_nodelay(bool enable)
-{
-  for (auto& conn : conns_)
-  {
-    conn.set_nodelay(enable);
-  }
-}
-
-void sender::set_message_rate(int msgs_per_sec)
-{
-  interval_ = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::seconds{1}) / msgs_per_sec;
-}
-
-void sender::set_socket_buffer_size(int size)
-{
-  for (auto& conn : conns_)
-  {
-    conn.set_socket_buffer_size(size);
-  }
-}
-
 void sender::run()
 {
   int conn_idx = 0;
@@ -104,7 +98,7 @@ void sender::run()
 
     for (auto msgs_sent = total_msgs_sent_.load(std::memory_order_relaxed); msgs_sent < expected_msgs;)
     {
-      auto count = std::max((expected_msgs - msgs_sent) / conns_.size(), 1ul);
+      auto count = std::max(std::min((expected_msgs - msgs_sent) / conns_.size(), cfg_.max_batch_size), 1ul);
 
       if (auto const sent = conns_[conn_idx++].try_send(count); sent > 0)
       {
@@ -130,12 +124,14 @@ void sender::run_after_n_messages()
   {
     auto const msgs_sent = total_msgs_sent_.load(std::memory_order_relaxed);
 
-    if (msgs_sent >= stop_after_n_messages_)
+    if (msgs_sent >= cfg_.stop_after_n_messages)
     {
       break;
     }
 
-    if (auto const sent = conns_[conn_idx++].try_send(stop_after_n_messages_ - msgs_sent); sent > 0)
+    auto const count = std::min(cfg_.stop_after_n_messages - msgs_sent, cfg_.max_batch_size);
+
+    if (auto const sent = conns_[conn_idx++].try_send(count); sent > 0)
     {
       total_msgs_sent_.store(msgs_sent + sent, std::memory_order_relaxed);
     }
@@ -152,11 +148,11 @@ void sender::run_after_n_messages()
 void sender::run_after_n_seconds()
 {
   int conn_idx = 0;
-  auto const end_time = start_time_ + std::chrono::seconds{stop_after_n_seconds_};
+  auto const end_time = start_time_ + std::chrono::seconds{cfg_.stop_after_n_seconds};
 
   while (!stop_flag_.load(std::memory_order_relaxed) && std::chrono::steady_clock::now() < end_time)
   {
-    if (auto const sent = conns_[conn_idx++].try_send(std::numeric_limits<std::uint64_t>::max()); sent > 0)
+    if (auto const sent = conns_[conn_idx++].try_send(cfg_.max_batch_size); sent > 0)
     {
       total_msgs_sent_.store(total_msgs_sent_.load(std::memory_order_relaxed) + sent, std::memory_order_relaxed);
     }

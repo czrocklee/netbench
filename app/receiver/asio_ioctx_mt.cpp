@@ -156,7 +156,7 @@ int main(int argc, char** argv)
 
     std::list<connection> conns;
     std::mutex conns_lock;
-    net::io_context io_ctx{};
+    net::io_context io_ctx{static_cast<int>(num_workers)};
 
     net::acceptor acceptor{io_ctx};
     acceptor.listen(host, port);

@@ -90,6 +90,7 @@ class Runner:
             "--conns-per-sender", str(fixed.conns_per_sender),
             "--msg-size", str(fixed.msg_size),
             "--stop-after-n-secs", str(duration_sec),
+            "--max-batch-size", str(fixed.max_batch_size),
         ]
         log = (results_dir / "client.log").open("w")
         if self.client_host == "local":
@@ -166,7 +167,7 @@ class Runner:
 
 
 def _run_plot(results_root: Path, scenario_name: str, output: str, relative_to: str,
-              out_dir: Optional[Path]) -> int:
+              impls: Optional[List[str]] = None, run_dir: Optional[Path] = None) -> int:
     plot_script = REPO_ROOT / "benchmark" / "plot_results.py"
     cmd = [
         sys.executable, str(plot_script),
@@ -175,8 +176,11 @@ def _run_plot(results_root: Path, scenario_name: str, output: str, relative_to: 
         "--output", output,
         "--relative-to", relative_to,
     ]
-    if out_dir is not None:
-        cmd += ["--out-dir", str(out_dir)]
+    if impls:
+        for impl in impls:
+            cmd += ["--impl", impl]
+    if run_dir is not None:
+        cmd += ["--run-dir", str(run_dir)]
     print(f"Auto-plot: {' '.join(shlex.quote(c) for c in cmd)}")
     return subprocess.call(cmd)
 
@@ -348,6 +352,13 @@ def run_from_args(args, scenarios: List[Scenario]) -> int:
     for s in scs:
         sc_dir = runner.run_scenario(s, args.out)
         if getattr(args, 'auto_plot', False):
-            out_dir = args.plot_out_dir if args.plot_out_dir is not None else sc_dir
-            _ = _run_plot(args.out, s.name, args.plot_output, args.plot_relative_to, out_dir)
+            # Per-run only plotting directly inside the scenario run directory
+            _ = _run_plot(
+                args.out,
+                s.name,
+                args.plot_output,
+                args.plot_relative_to,
+                impls=list(s.implementations),
+                run_dir=sc_dir,
+            )
     return 0

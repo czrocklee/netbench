@@ -14,6 +14,7 @@
 int main(int argc, char** argv)
 {
   auto app = CLI::App{"TCP sender client"};
+  sender::config cfg;
 
   std::string address;
   app.add_option("-a,--address", address, "Target address")->default_val("127.0.0.1:19004");
@@ -21,8 +22,7 @@ int main(int argc, char** argv)
   std::string bind_address;
   app.add_option("-b,--bind-address", bind_address, "Bind address")->default_val("");
 
-  int conns = 1;
-  app.add_option("-c,--conns-per-sender", conns, "Number of connections per sender")->default_val(1);
+  app.add_option("-c,--conns-per-sender", cfg.conns, "Number of connections per sender")->default_val(1);
 
   int senders = 1;
   app.add_option("-s,--senders", senders, "Number of senders")->default_val(1);
@@ -32,29 +32,26 @@ int main(int argc, char** argv)
     ->default_val(1000)
     ->transform(CLI::AsSizeValue(true));
 
-  int msg_size;
-  app.add_option("-z,--msg-size", msg_size, "Message size in bytes")
+  app.add_option("-z,--msg-size", cfg.msg_size, "Message size in bytes")
     ->default_val(1024)
     ->transform(CLI::AsSizeValue(false));
 
-  bool nodelay;
-  app.add_flag("-n,--nodelay", nodelay, "Enable TCP_NODELAY")->default_val(false);
+  app.add_flag("-n,--nodelay", cfg.nodelay, "Enable TCP_NODELAY")->default_val(false);
 
-  bool drain;
-  app.add_flag("-d,--drain", drain, "Enable receive buffer draining")->default_val(false);
+  app.add_flag("-d,--drain", cfg.drain, "Enable receive buffer draining")->default_val(false);
 
-  int socket_buffer_size;
-  app.add_option("-S,--socket-buffer-size", socket_buffer_size, "Socket buffer size in bytes")
+  app.add_option("-S,--socket-buffer-size", cfg.socket_buffer_size, "Socket buffer size in bytes")
     ->default_val(0)
     ->transform(CLI::AsSizeValue(false));
 
-  std::uint64_t stop_after_n_msgs;
-  app.add_option("--stop-after-n-msgs", stop_after_n_msgs, "Stop after n messages")
+  app.add_option("--stop-after-n-msgs", cfg.stop_after_n_messages, "Stop after n messages")
     ->default_val(0)
     ->transform(CLI::AsSizeValue(true));
 
-  std::uint64_t stop_after_n_secs;
-  app.add_option("--stop-after-n-secs", stop_after_n_secs, "Stop after n seconds")->default_val(0);
+  app.add_option("--stop-after-n-secs", cfg.stop_after_n_seconds, "Stop after n seconds")->default_val(0);
+
+  app.add_option("--max-batch-size", cfg.max_batch_size, "Max batch size for send operations")
+    ->default_val(IOV_MAX);
 
   int metric_hud_interval_secs;
   app
@@ -64,20 +61,24 @@ int main(int argc, char** argv)
 
   CLI11_PARSE(app, argc, argv);
 
+  cfg.msgs_per_sec = msgs_per_sec / senders;
+
   std::cout << "Target address: " << address << std::endl;
   std::cout << "Bind address: " << (bind_address.empty() ? "not set" : bind_address) << std::endl;
   std::cout << "Senders: " << senders << std::endl;
-  std::cout << "Connections per sender: " << conns << std::endl;
-  std::cout << "Message size: " << msg_size << " bytes" << std::endl;
-  std::cout << "Messages per second per sender: " << msgs_per_sec << std::endl;
-  std::cout << "Stop after n messages: " << (stop_after_n_msgs > 0 ? std::to_string(stop_after_n_msgs) : "disabled")
-            << std::endl;
-  std::cout << "Stop after n seconds: " << (stop_after_n_secs > 0 ? std::to_string(stop_after_n_secs) : "disabled")
-            << std::endl;
-  std::cout << "Nodelay: " << (nodelay ? "enabled" : "disabled") << std::endl;
-  std::cout << "Drain: " << (drain ? "enabled" : "disabled") << std::endl;
+  std::cout << "Connections per sender: " << cfg.conns << std::endl;
+  std::cout << "Message size: " << cfg.msg_size << " bytes" << std::endl;
+  std::cout << "Messages per second per sender: " << cfg.msgs_per_sec << std::endl;
+  std::cout << "Stop after n messages: "
+            << (cfg.stop_after_n_messages > 0 ? std::to_string(cfg.stop_after_n_messages) : "disabled") << std::endl;
+  std::cout << "Stop after n seconds: "
+            << (cfg.stop_after_n_seconds > 0 ? std::to_string(cfg.stop_after_n_seconds) : "disabled") << std::endl;
+  std::cout << "Nodelay: " << (cfg.nodelay ? "enabled" : "disabled") << std::endl;
+  std::cout << "Drain: " << (cfg.drain ? "enabled" : "disabled") << std::endl;
   std::cout << "Socket buffer size: "
-            << (socket_buffer_size > 0 ? std::to_string(socket_buffer_size) + " bytes" : "system default") << std::endl;
+            << (cfg.socket_buffer_size > 0 ? std::to_string(cfg.socket_buffer_size) + " bytes" : "system default")
+            << std::endl;
+  std::cout << "Max batch size: " << cfg.max_batch_size << std::endl;
 
   std::string host;
   std::string port;
@@ -99,41 +100,12 @@ int main(int argc, char** argv)
 
   for (auto i = 0; i < senders; ++i)
   {
-    auto& s = ss.emplace_back(i, conns, msg_size);
-
-    if (stop_after_n_msgs > 0)
-    {
-      s.stop_after_n_messages(stop_after_n_msgs);
-    }
-    else if (stop_after_n_secs > 0)
-    {
-      s.stop_after_n_seconds(stop_after_n_secs);
-    }
-    else
-    {
-      s.set_message_rate(msgs_per_sec / senders);
-    }
-
-    if (socket_buffer_size > 0)
-    {
-      s.set_socket_buffer_size(socket_buffer_size);
-    }
-
-    if (drain)
-    {
-      s.enable_drain();
-    }
-
-    if (nodelay)
-    {
-      s.set_nodelay(true);
-    }
-
+    auto& s = ss.emplace_back(i, cfg);
     s.connect(host, port, bind_address);
     s.start(shutdown_counter);
   }
 
-  auto metric_hud = setup_metric_hud(std::chrono::seconds{metric_hud_interval_secs}, [&ss, msg_size] {
+  auto metric_hud = setup_metric_hud(std::chrono::seconds{metric_hud_interval_secs}, [&ss, &cfg] {
     auto total_metric = metric{};
     total_metric.init_histogram();
 
@@ -143,7 +115,7 @@ int main(int argc, char** argv)
       total_metric.msgs += s.total_msgs_sent();
     }
 
-    total_metric.bytes = total_metric.msgs * msg_size;
+    total_metric.bytes = total_metric.msgs * cfg.msg_size;
     return total_metric;
   });
 

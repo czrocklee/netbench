@@ -82,11 +82,14 @@ def infer_var_from_dir(name: str) -> Tuple[str, int]:
 
 
 def gather_results(results_dir: Path, scenario_filter: Optional[List[str]] = None,
-                   impl_filter: Optional[List[str]] = None) -> Tuple[
-                       Dict[str, Dict[int, Dict[str, RunPoint]]],
-                       Dict[str, List[int]],
-                       Dict[str, str],
-                       Dict[str, str]
+                   impl_filter: Optional[List[str]] = None,
+                   single_run_dir: Optional[Path] = None) -> Tuple[
+                       Dict[str, Dict[int, Dict[str, RunPoint]]],  # run_dir_name -> var_val -> impl -> RunPoint
+                       Dict[str, List[int]],                       # run_dir_name -> var order
+                       Dict[str, str],                             # run_dir_name -> subtitle
+                       Dict[str, str],                             # run_dir_name -> title
+                       Dict[str, Path],                            # run_dir_name -> run_dir path
+                       Dict[str, List[str]]                        # run_dir_name -> preferred impl order from scenario.json
                    ]:
     # Returns:
     #  - scenarios -> var_val -> impl -> RunPoint
@@ -96,8 +99,16 @@ def gather_results(results_dir: Path, scenario_filter: Optional[List[str]] = Non
     var_order: Dict[str, List[int]] = {}
     subtitles: Dict[str, str] = {}
     titles: Dict[str, str] = {}
+    run_dir_paths: Dict[str, Path] = {}
+    impl_orders: Dict[str, List[str]] = {}
 
-    for sc_dir in sorted(results_dir.iterdir()):
+    run_dirs: List[Path]
+    if single_run_dir is not None:
+        run_dirs = [single_run_dir]
+    else:
+        run_dirs = sorted([p for p in results_dir.iterdir() if p.is_dir()])
+
+    for sc_dir in run_dirs:
         if not sc_dir.is_dir():
             continue
         sc_manifest = sc_dir / "scenario.json"
@@ -106,19 +117,22 @@ def gather_results(results_dir: Path, scenario_filter: Optional[List[str]] = Non
 
         scj = json.loads(sc_manifest.read_text())
         sc_name = scj.get("name")
-        # Optional friendly title for plots
         sc_title = scj.get("title") or sc_name
+        scenario_key = sc_dir.name  # Always unique per run now
         if sc_title:
-            titles[sc_name] = sc_title
-        if scenario_filter and sc_name not in scenario_filter:
+            titles[scenario_key] = sc_title
+        impl_list = scj.get("implementations") or []
+        if isinstance(impl_list, list):
+            impl_orders[scenario_key] = [str(x) for x in impl_list]
+        if scenario_filter and sc_name not in scenario_filter and scenario_key not in scenario_filter:
             continue
         var_key = scj.get("var_key")
         expected_vars = scj.get("var_values", [])
         expected_vals = [int(v) for v in expected_vars]
-
-        scenarios.setdefault(sc_name, {})
-        if sc_name not in var_order:
-            var_order[sc_name] = expected_vals or []
+        scenarios.setdefault(scenario_key, {})
+        if scenario_key not in var_order:
+            var_order[scenario_key] = expected_vals or []
+        run_dir_paths[scenario_key] = sc_dir
 
         for impl_dir in sorted([p for p in sc_dir.iterdir() if p.is_dir()]):
             impl = impl_dir.name
@@ -139,7 +153,7 @@ def gather_results(results_dir: Path, scenario_filter: Optional[List[str]] = Non
                 total_bytes, total_msgs, total_ops, bmin, emax = load_metrics(metrics_path)
                 # Read a subtitle once per scenario from metadata.json (CPU and kernel/OS)
                 try:
-                    if sc_name not in subtitles:
+                    if scenario_key not in subtitles:
                         meta = json.loads(meta_path.read_text())
                         m = meta.get("machine", {})
                         cpu = str(m.get("cpu_model", "")).strip()
@@ -156,7 +170,7 @@ def gather_results(results_dir: Path, scenario_filter: Optional[List[str]] = Non
                         elif os_name or os_version:
                             kernel_label = f"{os_name} {os_version}".strip()
                         if cpu or kernel_label:
-                            subtitles[sc_name] = " | ".join([s for s in [cpu, kernel_label] if s])
+                            subtitles[scenario_key] = " | ".join([s for s in [cpu, kernel_label] if s])
                 except Exception:
                     pass
                 duration_sec = None
@@ -168,7 +182,7 @@ def gather_results(results_dir: Path, scenario_filter: Optional[List[str]] = Non
                     duration_sec = float(fixed.get("duration_sec", 0))
 
                 rp = RunPoint(
-                    scenario=sc_name,
+                    scenario=scenario_key,
                     impl=impl,
                     var_key=var_key,
                     var_val=var_val,
@@ -177,21 +191,21 @@ def gather_results(results_dir: Path, scenario_filter: Optional[List[str]] = Non
                     ops_total=total_ops,
                     duration_sec=duration_sec,
                 )
-                scenarios[sc_name].setdefault(var_val, {})[impl] = rp
+                scenarios[scenario_key].setdefault(var_val, {})[impl] = rp
 
     # Fill var order from discovered values if not in manifest
-    for sc_name, vmap in scenarios.items():
-        if not var_order.get(sc_name):
-            var_order[sc_name] = sorted(vmap.keys())
-    return scenarios, var_order, subtitles, titles
+    for sk, vmap in scenarios.items():
+        if not var_order.get(sk):
+            var_order[sk] = sorted(vmap.keys())
+    return scenarios, var_order, subtitles, titles, run_dir_paths, impl_orders
 
 
 def plot_matplotlib(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_order: Dict[str, List[int]],
-                    scenario_subtitles: Dict[str, str], scenario_titles: Dict[str, str], impl_order: List[str], metric: str, out_dir: Path,
-                    baseline_impl: Optional[str] = None, debug_layout: bool = False) -> List[Path]:
+                    scenario_subtitles: Dict[str, str], scenario_titles: Dict[str, str], impl_order: List[str], metric: str,
+                    run_dir_paths: Dict[str, Path], baseline_impl: Optional[str] = None, debug_layout: bool = False) -> List[Path]:
     import matplotlib.pyplot as plt
     out_files: List[Path] = []
-    out_dir.mkdir(parents=True, exist_ok=True)
+    # Per-run only: each run directory gets its own plot
 
     for sc_name, vmap in scenarios.items():
         xs = var_order.get(sc_name, sorted(vmap.keys()))
@@ -247,9 +261,9 @@ def plot_matplotlib(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_or
             raw_vals = raw_vals_by_impl.get(impl, [])
             vals_scaled: List[float] = [(v / scale) if math.isfinite(v) else 0.0 for v in raw_vals]
             texts: List[str] = []
-
+            # If a baseline implementation is provided, compute percentage labels
             if baseline_impl:
-                for i, v in enumerate(raw_vals):
+                for i, v in enumerate(raw_vals):  # raw (unscaled) values
                     b = baseline_vals[i] if i < len(baseline_vals) else None
                     if b is not None and b > 0:
                         texts.append(f"{(v / b) * 100:.0f}%")
@@ -363,7 +377,8 @@ def plot_matplotlib(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_or
             except Exception:
                 pass
 
-        out_file = out_dir / f"{sc_name}.svg"
+        target_dir = run_dir_paths[sc_name]
+        out_file = target_dir / "plot.svg"
         fig.savefig(out_file, format="svg")
         plt.close(fig)
         out_files.append(out_file)
@@ -372,15 +387,26 @@ def plot_matplotlib(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_or
 
 
 def plot_html(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_order: Dict[str, List[int]],
-              scenario_subtitles: Dict[str, str], scenario_titles: Dict[str, str], impl_order: List[str], metric: str, out_dir: Path,
-              baseline_impl: Optional[str] = None, debug_layout: bool = False) -> List[Path]:
+              scenario_subtitles: Dict[str, str], scenario_titles: Dict[str, str], impl_order: List[str], metric: str,
+              run_dir_paths: Dict[str, Path], baseline_impl: Optional[str] = None, debug_layout: bool = False) -> List[Path]:
     # Try Plotly for interactive HTML; fallback to embedding SVGs only if Plotly is missing
-    out_dir.mkdir(parents=True, exist_ok=True)
+    # Per-run only
     try:
         import plotly.graph_objects as go  # type: ignore
     except ImportError:
         print("Plotly is not installed; falling back to static SVG wrapped in HTML.")
-        svgs = plot_matplotlib(scenarios, var_order, scenario_subtitles, impl_order, metric, out_dir, baseline_impl=baseline_impl, debug_layout=debug_layout)
+        # Fallback to matplotlib SVG generation (per-run)
+        svgs = plot_matplotlib(
+            scenarios,
+            var_order,
+            scenario_subtitles,
+            scenario_titles,
+            impl_order,
+            metric,
+            run_dir_paths,
+            baseline_impl=baseline_impl,
+            debug_layout=debug_layout,
+        )
         out_files: List[Path] = []
         for svg in svgs:
             html_path = svg.with_suffix('.html')
@@ -485,7 +511,8 @@ def plot_html(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_order: D
                 pass
             # Legend border
             fig.update_layout(legend=dict(bordercolor='#f0f', borderwidth=1))
-        out_file = out_dir / f"{sc_name}.html"
+        target_dir = run_dir_paths[sc_name]
+        out_file = target_dir / "plot.html"
         fig.write_html(out_file, include_plotlyjs='cdn', full_html=True)
         out_files.append(out_file)
     return out_files
@@ -499,33 +526,84 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--metric", default="msgs_per_sec", choices=["msgs_per_sec"])
     ap.add_argument("--relative-to", default="bsd", help="Baseline implementation for percentage labels; use 'none' to disable")
     ap.add_argument("--output", default="svg", choices=["svg", "html"])
-    ap.add_argument("--out-dir", type=Path, default=Path("results/plots"))
+    # Removed central out-dir/merge behavior; always per-run output
     ap.add_argument("--debug-layout", action="store_true", help="Draw bounding boxes for figure parts (titles/axes/legend) to debug layout")
+    ap.add_argument("--run-dir", type=Path, help="Limit to a single scenario run directory (results/<scenario>_<ts>)")
+    ap.add_argument("--no-hyperlinks", action="store_true", help="Disable clickable OSC8 hyperlinks in output paths")
+    # merge-runs removed
     args = ap.parse_args(argv)
 
-    scenarios, var_order, scenario_subtitles, scenario_titles = gather_results(args.results_dir, args.scenario, args.impl)
+    scenarios, var_order, scenario_subtitles, scenario_titles, run_dir_paths, scenario_impl_orders = gather_results(
+        args.results_dir, args.scenario, args.impl, single_run_dir=args.run_dir)
     if not scenarios:
         print(f"No results found under {args.results_dir}")
         return 1
 
-    # Compute impl order from union of impls seen, respecting filter order if given
-    impls_seen = []
-    for sc_map in scenarios.values():
-        for impl_map in sc_map.values():
-            for impl in impl_map.keys():
-                if impl not in impls_seen:
-                    impls_seen.append(impl)
-    impl_order = args.impl or impls_seen
+    # Determine implementation order.
+    # If user provided --impl, use that (filtered to those actually present).
+    # Else, if all selected scenarios share an identical implementations list in scenario.json, use that.
+    # Otherwise fall back to discovery order (first-seen across scenarios).
+    if args.impl:
+        impl_order = [i for i in args.impl if any(i in m for sc in scenarios.values() for m in sc.values())]
+    else:
+        collected_orders = []
+        for sk in scenarios.keys():
+            order = scenario_impl_orders.get(sk)
+            if order:
+                collected_orders.append(tuple(order))
+        preferred: Optional[List[str]] = None
+        if collected_orders:
+            first = collected_orders[0]
+            if all(o == first for o in collected_orders[1:]):
+                preferred = list(first)
+        if preferred:
+            impl_order = preferred
+        else:
+            impls_seen: List[str] = []
+            for sc_map in scenarios.values():
+                for impl_map in sc_map.values():
+                    for impl in impl_map.keys():
+                        if impl not in impls_seen:
+                            impls_seen.append(impl)
+            impl_order = impls_seen
 
     baseline_impl = None if (args.relative_to and args.relative_to.lower() == 'none') else args.relative_to
     if args.output == "svg":
-        files = plot_matplotlib(scenarios, var_order, scenario_subtitles, scenario_titles, impl_order, args.metric, args.out_dir, baseline_impl=baseline_impl, debug_layout=args.debug_layout)
+        files = plot_matplotlib(scenarios, var_order, scenario_subtitles, scenario_titles, impl_order, args.metric,
+                                run_dir_paths, baseline_impl=baseline_impl, debug_layout=args.debug_layout)
     else:
-        files = plot_html(scenarios, var_order, scenario_subtitles, scenario_titles, impl_order, args.metric, args.out_dir, baseline_impl=baseline_impl, debug_layout=args.debug_layout)
+        files = plot_html(scenarios, var_order, scenario_subtitles, scenario_titles, impl_order, args.metric,
+                          run_dir_paths, baseline_impl=baseline_impl, debug_layout=args.debug_layout)
 
+    def _hyper(f: Path) -> str:
+        """Return path wrapped in OSC8 hyperlink (BEL terminated) with underline+blue styling if interactive.
+
+        The visible text is always file://... for best compatibility with tmux/terminal auto-linking.
+        """
+        import os, sys
+        if args.no_hyperlinks:
+            return str(f)
+        if not sys.stdout.isatty():
+            return str(f)
+        if os.environ.get("NO_HYPERLINKS") is not None:
+            return str(f)
+        try:
+            url = f.resolve().as_uri()
+            text = url  # always show file://... for best compatibility
+            styled = f"\033[4;34m{text}\033[0m"
+            return f"\033]8;;{url}\a{styled}\033]8;;\a"
+        except Exception:
+            return str(f)
+
+    # Additionally list unique run directories (parents) so user can cmd+click the folder too
+    parents_printed = set()
     print("Wrote:")
     for f in files:
-        print(" -", f)
+        parent = f.parent
+        if parent not in parents_printed:
+            print(" -", _hyper(parent) + "/")
+            parents_printed.add(parent)
+        print("   ", _hyper(f))
     return 0
 
 

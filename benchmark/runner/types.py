@@ -18,7 +18,7 @@ class FixedParams:
     buffer_size: int = 32
     recv_so_rcvbuf: int = 0
     send_so_sndbuf: int = 0
-
+    max_batch_size: int = 1024
 
 @dc.dataclass
 class Scenario:
