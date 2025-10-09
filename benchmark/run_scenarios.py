@@ -29,10 +29,28 @@ else:
     REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
+def get_default_ip_address() -> str:
+    import socket
+    s = None
+    try:
+        # This is a common trick to get the primary non-loopback IP.
+        # It creates a UDP socket and "connects" to an external address.
+        # This doesn't send any data but makes the OS select an interface.
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+    except Exception:
+        # Fallback to localhost if the above fails (e.g., no network)
+        ip = "127.0.0.1"
+    finally:
+        if s:
+            s.close()
+    return ip
+
 def default_scenarios() -> List[Scenario]:
     fixed = FixedParams(
-        address="127.0.0.1:19004",
-        duration_sec=10,
+        address=f"{get_default_ip_address()}:19004",
+        duration_sec=15,
         msg_size=32,
         senders=1,
         conns_per_sender=1,
@@ -44,7 +62,7 @@ def default_scenarios() -> List[Scenario]:
     return [
         Scenario(
             name="receive_throughput_by_threads",
-            title="Receive Throughput by Threads (msg_sz=32, buf_size=32)",
+            title="Receive Throughput by Threads",
             fixed=fixed,
             var_key="workers",
             var_values=[1, 2, 4, 8],
@@ -52,11 +70,12 @@ def default_scenarios() -> List[Scenario]:
             implementations=["bsd", "uring", "asio", "asio_uring"],
         ),
         Scenario(
-            name="receive_throughput_by_connections",
-            title="Receive Throughput by Connections (msg_sz=32, buf_sz=1024)",
-            fixed=dc.replace(fixed, buffer_size=1024, senders=4, max_batch_size=4),
-            var_key="conns_per_sender",
-            var_values=[1, 32, 128, 256],
+            name="receive_throughput_by_buffer_size",
+            title="Receive Throughput by Buffer Size",
+            fixed=fixed,
+            var_key="buffer_size",
+            var_values=[32, 128, 512, 4096],
+            linkages={"senders": "max(buffer_size // (32 * 32), 1)"},
             implementations=["bsd", "uring", "asio", "asio_uring"],
         ),
     ]

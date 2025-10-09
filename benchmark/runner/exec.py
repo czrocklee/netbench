@@ -7,6 +7,7 @@ import signal
 import subprocess
 import sys
 import time
+import argparse
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, get_type_hints
@@ -60,6 +61,7 @@ class Runner:
             "--buffer-size", str(fixed.buffer_size),
             "--workers", str(fixed.workers),
             "--results-dir", str(results_dir),
+            "--metric-hud-interval-secs", str(fixed.metric_hud_interval_secs),
             "--shutdown-on-disconnect",
         ]
         if fixed.busy_spin:
@@ -76,12 +78,15 @@ class Runner:
 
         log = (results_dir / f"receiver_{impl}.log").open("w")
         if self.receiver_host == "local":
-            cmd = [str(self.receiver_app_dir / bin_name)] + args
-            return subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, cwd=str(self.receiver_app_dir))
+            full_cmd = [str(self.receiver_app_dir / bin_name)] + args
+            (results_dir / "receiver_cmd.log").write_text(" ".join(shlex.quote(c) for c in full_cmd))
+            return subprocess.Popen(full_cmd, stdout=log, stderr=subprocess.STDOUT, cwd=str(self.receiver_app_dir))
         else:
             remote_cmd = f"cd {shlex.quote(str(self.receiver_app_dir))} && ./" + shlex.quote(bin_name)
             remote_cmd += " " + " ".join(shlex.quote(a) for a in args)
-            return subprocess.Popen(["ssh", self.receiver_host, remote_cmd], stdout=log, stderr=subprocess.STDOUT)
+            full_cmd = ["ssh", self.receiver_host, remote_cmd]
+            (results_dir / "receiver_cmd.log").write_text(" ".join(shlex.quote(c) for c in full_cmd))
+            return subprocess.Popen(full_cmd, stdout=log, stderr=subprocess.STDOUT)
 
     def _run_client(self, fixed: FixedParams, duration_sec: int, results_dir: Path) -> int:
         args = [
@@ -91,15 +96,19 @@ class Runner:
             "--msg-size", str(fixed.msg_size),
             "--stop-after-n-secs", str(duration_sec),
             "--max-batch-size", str(fixed.max_batch_size),
+            "--metric-hud-interval-secs", str(fixed.metric_hud_interval_secs),
         ]
         log = (results_dir / "client.log").open("w")
         if self.client_host == "local":
-            cmd = [str(self.client_app_dir / CLIENT_BIN_NAME)] + args
-            return subprocess.call(cmd, stdout=log, stderr=subprocess.STDOUT, cwd=str(self.client_app_dir))
+            full_cmd = [str(self.client_app_dir / CLIENT_BIN_NAME)] + args
+            (results_dir / "client_cmd.log").write_text(" ".join(shlex.quote(c) for c in full_cmd))
+            return subprocess.call(full_cmd, stdout=log, stderr=subprocess.STDOUT, cwd=str(self.client_app_dir))
         else:
             remote_cmd = f"cd {shlex.quote(str(self.client_app_dir))} && ./" + shlex.quote(CLIENT_BIN_NAME)
             remote_cmd += " " + " ".join(shlex.quote(a) for a in args)
-            return subprocess.call(["ssh", self.client_host, remote_cmd], stdout=log, stderr=subprocess.STDOUT)
+            full_cmd = ["ssh", self.client_host, remote_cmd]
+            (results_dir / "client_cmd.log").write_text(" ".join(shlex.quote(c) for c in full_cmd))
+            return subprocess.call(full_cmd, stdout=log, stderr=subprocess.STDOUT)
 
     def _stop_receiver(self, proc: subprocess.Popen, timeout: float = 5.0):
         if proc.poll() is not None:
@@ -119,11 +128,13 @@ class Runner:
         except Exception:
             proc.kill()
 
-    def run_scenario(self, sc: Scenario, out_root: Path) -> Path:
+    def run_scenario(self, sc: Scenario, out_root: Path, cli_args: Optional[argparse.Namespace] = None) -> Path:
         self.ensure_binaries(sc.implementations)
         run_id = ts_utc_compact()
         sc_dir = out_root / f"{sc.name}_{run_id}"
         sc_dir.mkdir(parents=True, exist_ok=True)
+        if cli_args:
+            (sc_dir / "cli_args.json").write_text(json.dumps(vars(cli_args), indent=2, default=str))
         (sc_dir / "scenario.json").write_text(json.dumps(dc.asdict(sc), indent=2))
 
         for impl in sc.implementations:
@@ -156,7 +167,7 @@ class Runner:
                 extra_impl = list(sc.impl_extra.get(impl, [])) + list(self.impl_extra_args.get(impl, []))
 
                 rproc = self._start_receiver(impl, fixed, run_dir, tags, extra_impl)
-                time.sleep(0.5)
+                time.sleep(1)
                 rc = self._run_client(fixed, sc.fixed.duration_sec, run_dir)
                 if rc != 0:
                     print(f"Client exited with {rc} for {impl} {sc.var_key}={val}", file=sys.stderr)
@@ -350,7 +361,7 @@ def run_from_args(args, scenarios: List[Scenario]) -> int:
         return 0
 
     for s in scs:
-        sc_dir = runner.run_scenario(s, args.out)
+        sc_dir = runner.run_scenario(s, args.out, cli_args=args)
         if getattr(args, 'auto_plot', False):
             # Per-run only plotting directly inside the scenario run directory
             _ = _run_plot(
