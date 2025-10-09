@@ -74,8 +74,7 @@ def default_scenarios() -> List[Scenario]:
             title="Receive Throughput by Buffer Size",
             fixed=fixed,
             var_key="buffer_size",
-            var_values=[32, 128, 512, 4096],
-            linkages={"senders": "max(buffer_size // (32 * 32), 1)"},
+            var_values=[32, 128, 256, 512],
             implementations=["bsd", "uring", "asio", "asio_uring"],
         ),
     ]
@@ -107,7 +106,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     "Example: --scenario-fixed vary_workers:senders=2")
     # Auto-plot options
     p.add_argument("--auto-plot", action="store_true", help="Generate plots after each scenario")
-    p.add_argument("--plot-output", choices=["svg", "html"], default="svg", help="Plot format")
     p.add_argument("--plot-relative-to", default="bsd", help="Baseline impl for percentage labels; use 'none' to disable")
     p.add_argument("--plot-out-dir", type=Path, help="Output directory for plots (defaults to results/plots)")
     p.add_argument("--scenario-var-values", action="append", default=[],

@@ -7,7 +7,6 @@ namespace bsd
 {
   acceptor::acceptor(io_context& io_ctx) : io_ctx_{io_ctx}
   {
-    std::cout << "Acceptor created. " << this << std::endl;
   }
 
   void acceptor::listen(std::string const& address, std::string const& port, int backlog)

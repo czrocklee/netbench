@@ -111,22 +111,19 @@ class Runner:
             return subprocess.call(full_cmd, stdout=log, stderr=subprocess.STDOUT)
 
     def _stop_receiver(self, proc: subprocess.Popen, timeout: float = 5.0):
+        """
+        Waits for the receiver process to exit gracefully.
+        The receiver is expected to shut down on its own when the client disconnects.
+        If it doesn't exit within the timeout, it will be forcibly killed.
+        """
         if proc.poll() is not None:
             return
         try:
-            proc.send_signal(signal.SIGINT)
-            for _ in range(int(timeout * 10)):
-                if proc.poll() is not None:
-                    return
-                time.sleep(0.1)
-            proc.terminate()
-            for _ in range(int(timeout * 10)):
-                if proc.poll() is not None:
-                    return
-                time.sleep(0.1)
+            proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
             proc.kill()
-        except Exception:
-            proc.kill()
+            raise RuntimeError(
+                f"Receiver process {proc.pid} did not exit gracefully within {timeout}s and was forcibly killed.")
 
     def run_scenario(self, sc: Scenario, out_root: Path, cli_args: Optional[argparse.Namespace] = None) -> Path:
         self.ensure_binaries(sc.implementations)
@@ -177,14 +174,13 @@ class Runner:
         return sc_dir
 
 
-def _run_plot(results_root: Path, scenario_name: str, output: str, relative_to: str,
+def _run_plot(results_root: Path, scenario_name: str, relative_to: str,
               impls: Optional[List[str]] = None, run_dir: Optional[Path] = None) -> int:
     plot_script = REPO_ROOT / "benchmark" / "plot_results.py"
     cmd = [
         sys.executable, str(plot_script),
         "--results-dir", str(results_root),
         "--scenario", scenario_name,
-        "--output", output,
         "--relative-to", relative_to,
     ]
     if impls:
@@ -367,7 +363,6 @@ def run_from_args(args, scenarios: List[Scenario]) -> int:
             _ = _run_plot(
                 args.out,
                 s.name,
-                args.plot_output,
                 args.plot_relative_to,
                 impls=list(s.implementations),
                 run_dir=sc_dir,

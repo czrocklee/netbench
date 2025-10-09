@@ -29,6 +29,25 @@ COLOR_MAP = {
     "bsd": "#377eb8",     # blue
 }
 
+METRIC_PROPERTIES = {
+    "msgs_per_sec": {"label": "Messages per Second", "unit_family": "count"},
+    "bytes_per_sec": {"label": "Bytes per Second", "unit_family": "bytes"},
+    "ops_per_sec": {"label": "Ops per Second", "unit_family": "count"},
+}
+
+def get_scale_and_unit(metric_name: str, max_val: float) -> Tuple[float, str]:
+    family = METRIC_PROPERTIES.get(metric_name, {}).get("unit_family", "count")
+    if family == "bytes":
+        if max_val >= 1e9: return 1e9, 'GB/s'
+        if max_val >= 1e6: return 1e6, 'MB/s'
+        if max_val >= 1e3: return 1e3, 'KB/s'
+        return 1.0, 'B/s'
+    # Default to count
+    if max_val >= 1e9: return 1e9, 'G/s'
+    if max_val >= 1e6: return 1e6, 'M/s'
+    if max_val >= 1e3: return 1e3, 'K/s'
+    return 1.0, 'count/s'
+
 @dataclass
 class RunPoint:
     scenario: str
@@ -44,6 +63,22 @@ class RunPoint:
         if self.duration_sec <= 0:
             return float("nan")
         return self.msgs_total / self.duration_sec
+
+    def bytes_per_sec(self) -> float:
+        if self.duration_sec <= 0:
+            return float("nan")
+        return self.bytes_total / self.duration_sec
+
+    def ops_per_sec(self) -> float:
+        if self.duration_sec <= 0:
+            return float("nan")
+        return self.ops_total / self.duration_sec
+
+    def get_metric(self, name: str) -> float:
+        if name == "msgs_per_sec": return self.msgs_per_sec()
+        if name == "bytes_per_sec": return self.bytes_per_sec()
+        if name == "ops_per_sec": return self.ops_per_sec()
+        return float("nan")
 
 
 def parse_tags(tag_list: List[str]) -> Dict[str, str]:
@@ -201,46 +236,38 @@ def gather_results(results_dir: Path, scenario_filter: Optional[List[str]] = Non
 
 
 def plot_matplotlib(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_order: Dict[str, List[int]],
-                    scenario_subtitles: Dict[str, str], scenario_titles: Dict[str, str], impl_order: List[str], metric: str,
+                    scenario_subtitles: Dict[str, str], scenario_titles: Dict[str, str], impl_order: List[str],
+                    metric_y1: str, metric_y2: Optional[str], y2_mode: str,
                     run_dir_paths: Dict[str, Path], baseline_impl: Optional[str] = None, debug_layout: bool = False) -> List[Path]:
     import matplotlib.pyplot as plt
     out_files: List[Path] = []
     # Per-run only: each run directory gets its own plot
 
     for sc_name, vmap in scenarios.items():
-        xs = var_order.get(sc_name, sorted(vmap.keys()))
-        n_groups = len(xs)
+        x_values = var_order.get(sc_name, sorted(vmap.keys()))
+        n_groups = len(x_values)
         n_impls = len(impl_order)
         width = 0.8 / max(n_impls, 1)
-
-        fig, ax = plt.subplots(figsize=(max(6, n_groups * 2.0), 4))
-        base_positions = list(range(n_groups))
 
         # Precompute baseline values per x for annotations
         baseline_vals: List[Optional[float]] = []
         if baseline_impl:
-            for x in xs:
+            for x in x_values:
                 rp_b = vmap.get(x, {}).get(baseline_impl)
-                if rp_b and metric == "msgs_per_sec":
-                    baseline_vals.append(rp_b.msgs_per_sec())
+                if rp_b:
+                    baseline_vals.append(rp_b.get_metric(metric_y1))
                 else:
                     baseline_vals.append(None)
 
         # First pass: compute raw values per impl to determine y-axis scale
         raw_vals_by_impl: Dict[str, List[float]] = {}
         for impl in impl_order:
-            vals: List[float] = []
-            for x in xs:
+            vals_y1: List[float] = []
+            for x in x_values:
                 rp = vmap.get(x, {}).get(impl)
-                if not rp:
-                    v = 0.0
-                else:
-                    if metric == "msgs_per_sec":
-                        v = rp.msgs_per_sec()
-                    else:
-                        v = 0.0
-                vals.append(v)
-            raw_vals_by_impl[impl] = vals
+                v = rp.get_metric(metric_y1) if rp else 0.0
+                vals_y1.append(v)
+            raw_vals_by_impl[impl] = vals_y1
 
         # Decide scale unit: '', 'k', 'm', 'b'
         y_max = 0.0
@@ -248,15 +275,12 @@ def plot_matplotlib(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_or
             for v in vals:
                 if math.isfinite(v):
                     y_max = max(y_max, v)
-        if y_max >= 1e9:
-            scale = 1e9; unit = 'b'
-        elif y_max >= 1e6:
-            scale = 1e6; unit = 'm'
-        elif y_max >= 1e3:
-            scale = 1e3; unit = 'k'
-        else:
-            scale = 1.0; unit = ''
+        scale, unit = get_scale_and_unit(metric_y1, y_max)
 
+        fig, ax1 = plt.subplots(figsize=(max(6, n_groups * 2.0), 4))
+        base_positions = list(range(n_groups))
+
+        # Plot bars for Y1 metric
         for idx, impl in enumerate(impl_order):
             raw_vals = raw_vals_by_impl.get(impl, [])
             vals_scaled: List[float] = [(v / scale) if math.isfinite(v) else 0.0 for v in raw_vals]
@@ -271,18 +295,18 @@ def plot_matplotlib(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_or
                         texts.append("")
 
             positions = [p + idx * width for p in base_positions]
-            bars = ax.bar(positions, vals_scaled, width=width, label=impl, edgecolor="#333333")
+            bars = ax1.bar(positions, vals_scaled, width=width, label=impl, edgecolor="#333333", color=COLOR_MAP.get(impl))
             if baseline_impl:
                 for rect, txt in zip(bars, texts):
                     if not txt:
                         continue
                     height = rect.get_height()
-                    ax.text(rect.get_x() + rect.get_width() / 2.0, height,
+                    ax1.text(rect.get_x() + rect.get_width() / 2.0, height,
                             txt, ha='center', va='bottom', fontsize=8)
 
         # X ticks centered under each group
         centers = [p + (n_impls - 1) * width / 2 for p in base_positions]
-        ax.set_xticks(centers)
+        ax1.set_xticks(centers)
         # Determine var key name for labeling
         var_key_name = "var"
         try:
@@ -293,18 +317,59 @@ def plot_matplotlib(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_or
                     var_key_name = any_rp.var_key
         except Exception:
             pass
-        ax.set_xticklabels([f"{var_key_name} = {x}" for x in xs])
+        ax1.set_xticks(centers)
+        ax1.set_xticklabels([f"{var_key_name} = {x}" for x in x_values])
 
-        y_label = {
-            "msgs_per_sec": "Messages per Second",
-        }.get(metric, "Throughput (Gbps)")
+        y_label = METRIC_PROPERTIES.get(metric_y1, {}).get("label", metric_y1)
         if unit:
             y_label = f"{y_label} ({unit})"
-        ax.set_ylabel(y_label)
+        ax1.set_ylabel(y_label)
         try:
-            ax.ticklabel_format(style='plain', axis='y')
+            ax1.ticklabel_format(style='plain', axis='y')
         except Exception:
             pass
+
+        # Plot line for Y2 metric if requested
+        if metric_y2:
+            y2_label_base = METRIC_PROPERTIES.get(metric_y2, {}).get("label", metric_y2)
+            # Calculate max value for Y2 to determine scale
+            y2_max = 0.0
+            for x in x_values:
+                for impl in impl_order:
+                    rp = vmap.get(x, {}).get(impl)
+                    if rp:
+                        y2_max = max(y2_max, rp.get_metric(metric_y2))
+
+            y2_scale, y2_unit = get_scale_and_unit(metric_y2, y2_max)
+            y2_label = f"{y2_label_base} ({y2_unit})" if y2_unit else y2_label_base
+
+            ax2 = ax1.twinx()
+            if y2_mode == "line":
+                for impl in impl_order:
+                    vals_y2: List[float] = []
+                    for x in x_values:
+                        rp = vmap.get(x, {}).get(impl)
+                        v = rp.get_metric(metric_y2) if rp else float('nan')
+                        vals_y2.append(v / y2_scale)
+                    ax2.plot(centers, vals_y2, marker='o', linestyle='--', label=f"{impl} ({metric_y2})", color=COLOR_MAP.get(impl))
+                ax2.set_ylabel(y2_label)
+                ax2.ticklabel_format(style='plain', axis='y')
+                # Consolidate legends
+                lines, labels = ax1.get_legend_handles_labels()
+                lines2, labels2 = ax2.get_legend_handles_labels()
+                ax1.legend(lines + lines2, labels + labels2, loc='best')
+            else:  # share-bars mode
+                ax2.set_ylabel(y2_label)
+                ax2.ticklabel_format(style='plain', axis='y')
+                # Synchronize the axes
+                y1_lim_max = ax1.get_ylim()[1]
+                y2_lim_max = (y1_lim_max * scale) * (y2_max / y_max if y_max > 0 else 1.0)
+                ax2.set_ylim(0, y2_lim_max / y2_scale)
+                ax1.legend(loc='best')
+        else:
+            ax1.legend()
+
+        ax1.grid(axis='y', linestyle='--', alpha=0.3)
 
         subtitle = scenario_subtitles.get(sc_name)
         supt: Optional[object] = None
@@ -314,18 +379,16 @@ def plot_matplotlib(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_or
             main_title = scenario_titles.get(sc_name, sc_name)
             supt = fig.suptitle(main_title, fontsize=16, y=0.975)
             if subtitle:
-                # Subtitle centered below main title
-                subtxt = fig.text(0.98, 0.855, subtitle, ha='right', va='top', fontsize=10, color='#555')
-                # Bring plot area closer to titles (larger 'top' means less reserved space)
-                fig.subplots_adjust(top=0.92)
+                # Position subtitle precisely relative to the top-right of the axes area
+                subtxt = ax1.text(1.0, 1.02, subtitle, transform=ax1.transAxes,
+                                  ha='right', va='bottom', fontsize=10, color='#555')
+                #fig.subplots_adjust(top=0.90) # Adjust top to make space for titles
             else:
                 fig.subplots_adjust(top=0.95)
         except Exception:
             # Fallback: use axes title only
-            ax.set_title(scenario_titles.get(sc_name, sc_name))
+            ax1.set_title(scenario_titles.get(sc_name, sc_name))
 
-        ax.legend()
-        ax.grid(axis='y', linestyle='--', alpha=0.3)
         try:
             # Reserve just enough space for the titles
             fig.tight_layout(rect=[0, 0, 1, 0.95] if subtitle else [0, 0, 1, 0.97])
@@ -347,10 +410,9 @@ def plot_matplotlib(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_or
                 # Figure border
                 add_rect(0, 0, 1, 1, '#f00')
                 # Axes box
-                pos = ax.get_position()
+                pos = ax1.get_position()
                 add_rect(pos.x0, pos.y0, pos.width, pos.height, '#0a0')
-                # Legend box
-                leg = ax.get_legend()
+                leg = ax1.get_legend() or (ax2.get_legend() if 'ax2' in locals() else None)
                 if leg is not None:
                     try:
                         bbox = leg.get_window_extent(renderer=renderer)
@@ -386,151 +448,18 @@ def plot_matplotlib(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_or
     return out_files
 
 
-def plot_html(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_order: Dict[str, List[int]],
-              scenario_subtitles: Dict[str, str], scenario_titles: Dict[str, str], impl_order: List[str], metric: str,
-              run_dir_paths: Dict[str, Path], baseline_impl: Optional[str] = None, debug_layout: bool = False) -> List[Path]:
-    # Try Plotly for interactive HTML; fallback to embedding SVGs only if Plotly is missing
-    # Per-run only
-    try:
-        import plotly.graph_objects as go  # type: ignore
-    except ImportError:
-        print("Plotly is not installed; falling back to static SVG wrapped in HTML.")
-        # Fallback to matplotlib SVG generation (per-run)
-        svgs = plot_matplotlib(
-            scenarios,
-            var_order,
-            scenario_subtitles,
-            scenario_titles,
-            impl_order,
-            metric,
-            run_dir_paths,
-            baseline_impl=baseline_impl,
-            debug_layout=debug_layout,
-        )
-        out_files: List[Path] = []
-        for svg in svgs:
-            html_path = svg.with_suffix('.html')
-            html_path.write_text(f"""
-<!doctype html>
-<html><head><meta charset=\"utf-8\"><title>{svg.stem}</title></head>
-<body><img src=\"{svg.name}\" alt=\"{svg.stem}\"/></body></html>
-"""
-            )
-            out_files.append(html_path)
-        return out_files
-
-    out_files: List[Path] = []
-    for sc_name, vmap in scenarios.items():
-        xs = var_order[sc_name]
-        fig = go.Figure()
-
-        # First pass: gather raw values by implementation
-        raw_by_impl: Dict[str, List[float]] = {}
-        for impl in impl_order:
-            ys: List[float] = []
-            for x in xs:
-                rp = vmap.get(x, {}).get(impl)
-                if not rp:
-                    v = 0.0
-                else:
-                    if metric == "msgs_per_sec":
-                        v = rp.msgs_per_sec()
-                    else:
-                        v = 0.0
-                ys.append(v)
-            raw_by_impl[impl] = ys
-
-        # Decide scale unit based on max
-        y_max = 0.0
-        for ys in raw_by_impl.values():
-            for v in ys:
-                if math.isfinite(v):
-                    y_max = max(y_max, v)
-        if y_max >= 1e9:
-            scale = 1e9; unit = 'b'
-        elif y_max >= 1e6:
-            scale = 1e6; unit = 'm'
-        elif y_max >= 1e3:
-            scale = 1e3; unit = 'k'
-        else:
-            scale = 1.0; unit = ''
-
-        # Plot scaled bars per implementation
-        for impl in impl_order:
-            ys_raw = raw_by_impl.get(impl, [])
-            ys_scaled = [(v / scale) if math.isfinite(v) else 0.0 for v in ys_raw]
-            texts: List[str] = []
-            if baseline_impl:
-                for i, x in enumerate(xs):
-                    rp_b = vmap.get(x, {}).get(baseline_impl)
-                    b = rp_b.msgs_per_sec() if (rp_b and metric == "msgs_per_sec") else None
-                    if b is not None and b > 0:
-                        texts.append(f"{(ys_raw[i] / b) * 100:.0f}%")
-                    else:
-                        texts.append("")
-            if baseline_impl:
-                fig.add_bar(name=impl, x=[str(x) for x in xs], y=ys_scaled, text=texts, textposition='outside')
-            else:
-                fig.add_bar(name=impl, x=[str(x) for x in xs], y=ys_scaled)
-
-        y_label = {
-            "throughput_gbps": "Throughput (Gbps)",
-            "throughput_mbps": "Throughput (Mbps)",
-            "mb_per_sec": "MB/s",
-            "msgs": "Messages",
-            "ops": "Ops",
-        }.get(metric, "Throughput (Gbps)")
-        if unit:
-            y_label = f"{y_label} ({unit})"
-        subtitle = scenario_subtitles.get(sc_name)
-        main_title = scenario_titles.get(sc_name, sc_name)
-        # Use two-line title for Plotly: main title then subtitle beneath
-        if subtitle:
-            title_text = f"{main_title}<br><span style='font-size:0.9em;color:#555'>{subtitle}</span>"
-        else:
-            title_text = main_title
-        fig.update_layout(
-            barmode='group',
-            title={'text': title_text},
-            xaxis_title=vmap[next(iter(vmap))][next(iter(vmap[next(iter(vmap))]))].var_key if vmap else "var",
-            yaxis_title=y_label,
-            legend_title="Implementation",
-            margin=dict(t=70)
-        )
-        if debug_layout:
-            # Paper border
-            fig.add_shape(type='rect', xref='paper', yref='paper', x0=0, y0=0, x1=1, y1=1,
-                          line=dict(color='red', width=1, dash='dot'))
-            # Plot (axes) domain
-            try:
-                dx = getattr(fig.layout.xaxis, 'domain', [0, 1])
-                dy = getattr(fig.layout.yaxis, 'domain', [0, 1])
-                fig.add_shape(type='rect', xref='paper', yref='paper', x0=dx[0], y0=dy[0], x1=dx[1], y1=dy[1],
-                              line=dict(color='green', width=1, dash='dot'))
-            except Exception:
-                pass
-            # Legend border
-            fig.update_layout(legend=dict(bordercolor='#f0f', borderwidth=1))
-        target_dir = run_dir_paths[sc_name]
-        out_file = target_dir / "plot.html"
-        fig.write_html(out_file, include_plotlyjs='cdn', full_html=True)
-        out_files.append(out_file)
-    return out_files
-
-
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--results-dir", type=Path, default=Path("results"))
     ap.add_argument("--scenario", action="append", help="Scenario(s) to include; default all")
     ap.add_argument("--impl", action="append", help="Implementations to include and order")
-    ap.add_argument("--metric", default="msgs_per_sec", choices=["msgs_per_sec"])
+    ap.add_argument("--metric", dest="metric_y1", default="msgs_per_sec", choices=["msgs_per_sec", "bytes_per_sec", "ops_per_sec"], help="Metric for the primary (left) Y-axis (bars)")
+    ap.add_argument("--metric-y2", default="bytes_per_sec", choices=["msgs_per_sec", "bytes_per_sec", "ops_per_sec", "none"], help="Metric for the secondary (right) Y-axis. Use 'none' to disable.")
+    ap.add_argument("--y2-mode", default="share-bars", choices=["share-bars", "line"], help="How to display the secondary Y-axis metric: share bars or draw a separate line.")
     ap.add_argument("--relative-to", default="bsd", help="Baseline implementation for percentage labels; use 'none' to disable")
-    ap.add_argument("--output", default="svg", choices=["svg", "html"])
-    # Removed central out-dir/merge behavior; always per-run output
     ap.add_argument("--debug-layout", action="store_true", help="Draw bounding boxes for figure parts (titles/axes/legend) to debug layout")
     ap.add_argument("--run-dir", type=Path, help="Limit to a single scenario run directory (results/<scenario>_<ts>)")
     ap.add_argument("--no-hyperlinks", action="store_true", help="Disable clickable OSC8 hyperlinks in output paths")
-    # merge-runs removed
     args = ap.parse_args(argv)
 
     scenarios, var_order, scenario_subtitles, scenario_titles, run_dir_paths, scenario_impl_orders = gather_results(
@@ -568,12 +497,11 @@ def main(argv: Optional[List[str]] = None) -> int:
             impl_order = impls_seen
 
     baseline_impl = None if (args.relative_to and args.relative_to.lower() == 'none') else args.relative_to
-    if args.output == "svg":
-        files = plot_matplotlib(scenarios, var_order, scenario_subtitles, scenario_titles, impl_order, args.metric,
-                                run_dir_paths, baseline_impl=baseline_impl, debug_layout=args.debug_layout)
-    else:
-        files = plot_html(scenarios, var_order, scenario_subtitles, scenario_titles, impl_order, args.metric,
-                          run_dir_paths, baseline_impl=baseline_impl, debug_layout=args.debug_layout)
+    metric_y2 = None if (args.metric_y2 and args.metric_y2.lower() == 'none') else args.metric_y2
+    files = plot_matplotlib(scenarios, var_order, scenario_subtitles, scenario_titles, impl_order, args.metric_y1, metric_y2, args.y2_mode,
+                            run_dir_paths, baseline_impl=baseline_impl, debug_layout=args.debug_layout)
+    # Sort files by parent directory creation time in descending order
+    files.sort(key=lambda p: p.parent.stat().st_ctime, reverse=True)
 
     def _hyper(f: Path) -> str:
         """Return path wrapped in OSC8 hyperlink (BEL terminated) with underline+blue styling if interactive.

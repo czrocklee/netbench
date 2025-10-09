@@ -123,6 +123,8 @@ void worker::add_connection(net::socket sock)
           metrics_.end_ts = std::chrono::steady_clock::now();
           config_.shutdown_counter->fetch_sub(1);
           stop_flag_.store(true, std::memory_order::relaxed);
+          std::cout << "worker " << std::this_thread::get_id() << " shutting down after last connection closed."
+                    << std::endl;
         }
 
         return;
