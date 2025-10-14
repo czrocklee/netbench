@@ -58,6 +58,8 @@ def default_scenarios() -> List[Scenario]:
         echo="none",
         buffer_size=32,
         max_batch_size=1024,
+        metric_hud_interval_secs=1,
+        collect_latency_every_n_samples=1000,
     )
     return [
         Scenario(

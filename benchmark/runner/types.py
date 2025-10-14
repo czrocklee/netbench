@@ -19,6 +19,7 @@ class FixedParams:
     recv_so_rcvbuf: int = 0
     send_so_sndbuf: int = 0
     max_batch_size: int = 1024
+    collect_latency_every_n_samples: int = 0
     metric_hud_interval_secs: int = 0
 
 @dc.dataclass

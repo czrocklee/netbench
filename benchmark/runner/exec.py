@@ -62,6 +62,7 @@ class Runner:
             "--workers", str(fixed.workers),
             "--results-dir", str(results_dir),
             "--metric-hud-interval-secs", str(fixed.metric_hud_interval_secs),
+            "--collect-latency-every-n-samples", str(fixed.collect_latency_every_n_samples),
             "--shutdown-on-disconnect",
         ]
         if fixed.busy_spin:
@@ -110,7 +111,7 @@ class Runner:
             (results_dir / "client_cmd.log").write_text(" ".join(shlex.quote(c) for c in full_cmd))
             return subprocess.call(full_cmd, stdout=log, stderr=subprocess.STDOUT)
 
-    def _stop_receiver(self, proc: subprocess.Popen, timeout: float = 5.0):
+    def _stop_receiver(self, proc: subprocess.Popen, timeout: float = 15.0):
         """
         Waits for the receiver process to exit gracefully.
         The receiver is expected to shut down on its own when the client disconnects.

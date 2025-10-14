@@ -100,7 +100,7 @@ int main(int argc, char const* argv[])
 
 #elifdef BSD_API
   app.add_option("--read-limit", cfg.read_limit, "Optional read limit for BSD API (0 for no limit)")
-    ->default_val(1024 * 64)
+    ->default_val(0)
     ->transform(CLI::AsSizeValue(false));
 #endif
 
@@ -236,7 +236,6 @@ int main(int argc, char const* argv[])
       dump_run_metadata(metadata_file, std::vector<std::string>{argv, argv + argc}, tags);
       std::cout << "Run metadata written to " << metadata_file << std::endl;
 
-      auto const metrics_file = dir / "metrics.json";
       auto all_metrics = std::vector<metric const*>{};
 
       for (auto& w : workers)
@@ -244,8 +243,7 @@ int main(int argc, char const* argv[])
         all_metrics.push_back(&w->get_metrics());
       }
 
-      dump_metrics(metrics_file, all_metrics);
-      std::cout << "Metrics written to " << metrics_file << std::endl;
+      dump_metrics(dir, all_metrics);
     }
 
     std::cout << "Total messages received: "

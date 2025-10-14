@@ -30,6 +30,13 @@ namespace bsd
 
   void receiver::handle_events(std::uint32_t events)
   {
+    if (events & (EPOLLHUP | EPOLLRDHUP))
+    {
+      // Peer closed connection
+      data_cb_(::asio::error::make_error_code(::asio::error::eof), {});
+      return;
+    }
+    
     if (events & EPOLLERR)
     {
       int socket_error = 0;
@@ -83,8 +90,8 @@ namespace bsd
           // No more data to read, exit the loop
           break;
         }
-
         data_cb_(std::make_error_code(static_cast<std::errc>(errno)), {});
+        break;
       }
     }
   }

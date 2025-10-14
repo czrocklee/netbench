@@ -21,6 +21,19 @@ let
     cmakeFlags = [ "-DHDR_HISTOGRAM_BUILD_PROGRAMS=OFF" ];
   };
 
+  pythonPackages = pkgs.python3.pkgs;
+  hdrhistogram-py-lib = pythonPackages.buildPythonPackage rec {
+    pname = "hdrhistogram"; 
+    version = "0.10.3";
+    src = pythonPackages.fetchPypi {
+      inherit pname version;
+      sha256 = "sha256-84kN8KbzxYKgqLKkmlaHKcsxnxYAaD5EWMyYtoyjKEE=";
+    };
+    nativeBuildInputs = with pythonPackages; [
+      pbr
+    ];
+  };
+
   liburing-lib = pkgs.stdenv.mkDerivation {
     pname = "liburing";
     version = "2.12"; # A specific version/tag from GitHub
@@ -69,9 +82,11 @@ in
       bpftrace
 
       # python for benchmark scripts
-      python3
-      python3Packages.matplotlib
-      python3Packages.plotly
+      (python3.withPackages (ps: [
+        ps.matplotlib
+        ps.plotly
+        hdrhistogram-py-lib
+      ]))
 
       # dependencies
       liburing-lib

@@ -31,7 +31,7 @@ namespace uring
       if (cqe.res == -ENOBUFS)
       {
         // Handle the case where no buffers are available
-        // std::cerr << "No buffers available for receiving data. fd=" << self.sock_.get_fd() << std::endl;
+
         if (!(cqe.flags & IORING_CQE_F_MORE))
         {
           new_multishot_recv_op();

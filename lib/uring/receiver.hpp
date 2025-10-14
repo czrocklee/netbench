@@ -15,13 +15,10 @@ namespace uring
     using data_callback = std::move_only_function<void(std::error_code, ::asio::const_buffer)>;
 
     explicit receiver(io_context& io_ctx, provided_buffer_pool& buffer_pool);
-
     void open(socket sock);
-
     void start(data_callback cb);
 
     socket& get_socket() noexcept { return sock_; }
-
     io_context& get_io_context() noexcept { return io_ctx_; }
 
   private:

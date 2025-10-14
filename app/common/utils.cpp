@@ -4,6 +4,8 @@
 
 #include <boost/algorithm/string/join.hpp>
 #include <nlohmann/json.hpp>
+#include <hdr/hdr_histogram.h>
+#include <hdr/hdr_histogram_log.h>
 
 #include <thread>
 #include <pthread.h>
@@ -102,12 +104,15 @@ void dump_run_metadata(
   ofs << j.dump(2) << std::endl;
 }
 
-void dump_metrics(std::filesystem::path const& path, std::vector<metric const*> const& metrics)
+void dump_metrics(std::filesystem::path const& dir, std::vector<metric const*> const& metrics)
 {
   auto j = nlohmann::json::array();
+  int worker_idx = 0;
 
-  for (auto const* m : metrics)
+  for (auto i = 0u; i < metrics.size(); ++i)
   {
+    auto const* m = metrics[i];
+
     j.push_back({
       {"ops", m->ops},
       {"msgs", m->msgs},
@@ -115,8 +120,36 @@ void dump_metrics(std::filesystem::path const& path, std::vector<metric const*> 
       {"begin_ts", m->begin_ts.time_since_epoch().count()},
       {"end_ts", m->end_ts.time_since_epoch().count()},
     });
+
+    if (m->latency_hist && m->latency_hist->total_count > 0)
+    {
+      auto const hist_log_path = dir / std::to_string(i).append(".hdr");
+
+      if (FILE* fp = ::fopen(hist_log_path.c_str(), "w"); fp != nullptr)
+      {
+        constexpr auto to_timespec = [](std::chrono::steady_clock::time_point tp) {
+          auto const secs = std::chrono::time_point_cast<std::chrono::seconds>(tp);
+          auto const ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(tp) -
+                          std::chrono::time_point_cast<std::chrono::nanoseconds>(secs);
+          return ::timespec{secs.time_since_epoch().count(), ns.count()};
+        };
+
+        auto const begin_ts = to_timespec(m->begin_ts);
+        auto const end_ts = to_timespec(m->end_ts);
+        ::hdr_log_write(nullptr, fp, &begin_ts, &end_ts, m->latency_hist.get());
+        ::fclose(fp);
+        std::cout << "Lossless latency histogram for worker " << i << " written to " << hist_log_path << std::endl;
+      }
+      else
+      {
+        std::cerr << "Failed to open histogram log file " << hist_log_path << " for writing: " << strerror(errno)
+                  << std::endl;
+      }
+    }
   }
 
-  auto ofs = std::ofstream{path};
+  auto const metrics_path = dir / "metrics.json";
+  auto ofs = std::ofstream{metrics_path};
   ofs << j.dump(2) << std::endl;
+  std::cout << "Metrics written to " << metrics_path << std::endl;
 }

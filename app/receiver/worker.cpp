@@ -116,16 +116,17 @@ void worker::add_connection(net::socket sock)
     iter->receiver.start([this, iter](std::error_code ec, auto&& data) {
       if (ec)
       {
-        connections_.erase(iter);
+        metrics_.end_ts = std::chrono::steady_clock::now();
 
-        if (config_.shutdown_on_disconnect && connections_.empty())
-        {
-          metrics_.end_ts = std::chrono::steady_clock::now();
-          config_.shutdown_counter->fetch_sub(1);
-          stop_flag_.store(true, std::memory_order::relaxed);
-          std::cout << "worker " << std::this_thread::get_id() << " shutting down after last connection closed."
-                    << std::endl;
-        }
+        post([this, iter] {
+          connections_.erase(iter);
+
+          if (config_.shutdown_on_disconnect && connections_.empty())
+          {
+            config_.shutdown_counter->fetch_sub(1);
+            stop_flag_.store(true, std::memory_order::relaxed);
+          }
+        });
 
         return;
       }

@@ -6,7 +6,6 @@ Features
 - Scans results/<scenario_ts>/<impl>/<var_key>_<val>/ for metrics.json + metadata.json
 - Uses scenario.json (one level up) to learn var_key and default sorting
 - Computes throughput from metrics (sum bytes / duration) or falls back to scenario duration
-- Outputs SVG by default; optional HTML (interactive with Plotly if available, else wraps the SVG)
 
 Examples
 - python3 benchmark/plot_results.py --results-dir results --scenario vary_workers --output svg
@@ -233,6 +232,179 @@ def gather_results(results_dir: Path, scenario_filter: Optional[List[str]] = Non
         if not var_order.get(sk):
             var_order[sk] = sorted(vmap.keys())
     return scenarios, var_order, subtitles, titles, run_dir_paths, impl_orders
+
+
+def _find_var_key(vmap: Dict[int, Dict[str, RunPoint]]) -> Optional[str]:
+    try:
+        if vmap:
+            any_impl_map = next(iter(vmap.values()))
+            if any_impl_map:
+                any_rp = next(iter(any_impl_map.values()))
+                return any_rp.var_key
+    except Exception:
+        pass
+    return None
+
+
+# Simplified: no decode fallbacks helper; we directly decode HIST tokens with hdrh only.
+
+
+def _merge_hdr_histograms(var_dir: Path):
+    """Read all .hdr files in var_dir and merge into a single histogram.
+
+    Returns a merged hdrh.HdrHistogram instance, or None if not available.
+    """
+    files = list(sorted(var_dir.glob("*.hdr")))
+    if not files:
+        return None
+
+    def _read_last_hist_hdrh_token(path: Path):
+        """Parse HIST token from .hdr file and decode using hdrh.histogram.HdrHistogram (simple path)."""
+        from hdrh.histogram import HdrHistogram as HdrH_Hist  # type: ignore
+        last = None
+        with open(path, "rt", errors="ignore") as f:
+            for line in f:
+                s = line.strip()
+                if not s or s.startswith("#"):
+                    continue
+                hist_token = None
+                parts = s.split(',')
+                for token in parts:
+                    t = token.strip().strip('"\'')
+                    if t.startswith('HIST'):
+                        hist_token = t
+                        break
+                if hist_token is None and 'HIST' in s:
+                    idx = s.find('HIST')
+                    hist_token = s[idx:].strip().rstrip(',')
+                if not hist_token:
+                    continue
+                # Directly decode the token string (hdrh accepts the HIST… token)
+                last = HdrH_Hist.decode(hist_token)
+        return last
+
+    def _hist_total_count(h) -> int:
+        # Try a few attribute names/methods across libraries
+        for attr in ("get_total_count", "total_count"):
+            try:
+                v = getattr(h, attr)
+                return int(v() if callable(v) else v)
+            except Exception:
+                continue
+        return 0
+
+    merged = None
+    for fp in files:
+        last_hist = _read_last_hist_hdrh_token(fp)
+        if last_hist is None:
+            continue
+        if merged is None:
+            merged = last_hist
+        else:
+            try:
+                merged.add(last_hist)  # type: ignore[attr-defined]
+            except Exception:
+                # Fallback: prefer the histogram with larger total count
+                try:
+                    if _hist_total_count(last_hist) > _hist_total_count(merged):
+                        merged = last_hist
+                except Exception:
+                    pass
+    return merged
+
+
+def _aggregate_percentiles_merged(var_dir: Path, requested: List[float]) -> Optional[Dict[float, float]]:
+    """Compute percentiles from merged histogram across workers.
+
+    Units returned: microseconds.
+    """
+    merged = _merge_hdr_histograms(var_dir)
+    if merged is None:
+        return None
+    values: Dict[float, float] = {}
+    for p in requested:
+        try:
+            # Support both APIs: get_value_at_percentile (hdrh) and value_at_percentile (hdrhistogram)
+            if hasattr(merged, 'get_value_at_percentile'):
+                v = merged.get_value_at_percentile(p)
+            else:
+                v = merged.value_at_percentile(p)  # type: ignore[attr-defined]
+            values[p] = float(v) / 1000.0  # ns -> us
+        except Exception:
+            pass
+    return values if values else None
+
+
+def plot_latency_percentiles(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_order: Dict[str, List[int]],
+                             scenario_subtitles: Dict[str, str], scenario_titles: Dict[str, str], impl_order: List[str],
+                             run_dir_paths: Dict[str, Path], percentiles: Optional[List[float]] = None,
+                             debug_layout: bool = False) -> List[Path]:
+    import matplotlib.pyplot as plt
+    if percentiles is None:
+        percentiles = [50.0, 90.0, 99.0, 99.9, 99.9]
+    out_files: List[Path] = []
+
+    for sc_name, vmap in scenarios.items():
+        x_values = var_order.get(sc_name, sorted(vmap.keys()))
+        var_key_name = _find_var_key(vmap) or "var"
+        sc_dir = run_dir_paths[sc_name]
+
+        # Prepare data: for each impl, for each x, merge workers' histograms and compute percentiles
+        data: Dict[str, Dict[int, Dict[float, float]]] = {impl: {} for impl in impl_order}
+        for impl in impl_order:
+            for x in x_values:
+                var_dir = sc_dir / impl / f"{var_key_name}_{x}"
+                agg = _aggregate_percentiles_merged(var_dir, percentiles)
+                if agg:
+                    data[impl][x] = agg
+
+        # For each percentile, draw a line plot per impl across x
+        for p in percentiles:
+            fig, ax = plt.subplots(figsize=(max(6, len(x_values) * 2.0), 4))
+            centers = list(range(len(x_values)))
+            plotted_any = False
+            for impl in impl_order:
+                y = []
+                for x in x_values:
+                    agg = data.get(impl, {}).get(x)
+                    y.append(agg.get(p) if agg and (p in agg) else float('nan'))
+                if all((not math.isfinite(v) for v in y)):
+                    continue
+                ax.plot(centers, y, marker='o', linestyle='-', label=impl, color=COLOR_MAP.get(impl))
+                plotted_any = True
+
+            ax.set_xticks(centers)
+            ax.set_xticklabels([f"{var_key_name} = {x}" for x in x_values])
+            ax.set_ylabel(f"Latency at p{p} (us)")
+            subtitle = scenario_subtitles.get(sc_name)
+            try:
+                main_title = scenario_titles.get(sc_name, sc_name)
+                fig.suptitle(main_title, fontsize=16, y=0.975)
+                if subtitle:
+                    ax.text(1.0, 1.02, subtitle, transform=ax.transAxes,
+                            ha='right', va='bottom', fontsize=10, color='#555')
+                else:
+                    fig.subplots_adjust(top=0.95)
+            except Exception:
+                pass
+            ax.grid(axis='y', linestyle='--', alpha=0.3)
+            if plotted_any:
+                ax.legend(loc='best')
+            
+            try:
+                fig.tight_layout(rect=[0, 0, 1, 0.95] if subtitle else [0, 0, 1, 0.97])
+            except Exception:
+                fig.tight_layout()
+
+            if plotted_any:
+                out_file = sc_dir / f"latency_p{str(p).replace('.', '_')}.svg"
+                fig.savefig(out_file, format="svg")
+                plt.close(fig)
+                out_files.append(out_file)
+            else:
+                plt.close(fig)
+
+    return out_files
 
 
 def plot_matplotlib(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_order: Dict[str, List[int]],
@@ -500,6 +672,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     metric_y2 = None if (args.metric_y2 and args.metric_y2.lower() == 'none') else args.metric_y2
     files = plot_matplotlib(scenarios, var_order, scenario_subtitles, scenario_titles, impl_order, args.metric_y1, metric_y2, args.y2_mode,
                             run_dir_paths, baseline_impl=baseline_impl, debug_layout=args.debug_layout)
+    # Also generate latency percentile plots if .hdr or percentile CSV files exist
+    lat_files = plot_latency_percentiles(scenarios, var_order, scenario_subtitles, scenario_titles, impl_order, run_dir_paths,
+                                         percentiles=[50.0, 90.0, 99.0, 99.9, 99.99], debug_layout=args.debug_layout)
+    files.extend(lat_files)
     # Sort files by parent directory creation time in descending order
     files.sort(key=lambda p: p.parent.stat().st_ctime, reverse=True)
 
