@@ -53,12 +53,12 @@ def default_scenarios() -> List[Scenario]:
         duration_sec=15,
         msg_size=32,
         senders=1,
-        conns_per_sender=1,
+        conns_per_sender=1,    
         busy_spin=False,
         echo="none",
         buffer_size=32,
         max_batch_size=1024,
-        metric_hud_interval_secs=1,
+        metric_hud_interval_secs=0,
         collect_latency_every_n_samples=1000,
     )
     return [
@@ -77,6 +77,15 @@ def default_scenarios() -> List[Scenario]:
             fixed=fixed,
             var_key="buffer_size",
             var_values=[32, 128, 256, 512],
+            implementations=["bsd", "uring", "asio", "asio_uring"],
+        ),
+        Scenario(
+            name="receive_latency_by_message_rate",
+            title="Receive Latency by Message Rate",
+            fixed=fixed,
+            var_key="msgs_per_sec",
+            var_values=[1000, 10000, 100000, 1000000],
+            linkages={"collect_latency_every_n_samples": "max(msgs_per_sec // 100000, 1)"},
             implementations=["bsd", "uring", "asio", "asio_uring"],
         ),
     ]

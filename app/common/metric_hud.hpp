@@ -15,9 +15,7 @@ struct metric
 {
   void init_histogram();
   void add(metric const& other);
-  void update_latency_histogram(std::uint64_t value) { 
-    std::cout << "Recording value " << value << " to hist " << latency_hist.get() << std::endl;
-    ::hdr_record_value(latency_hist.get(), value); }
+  void update_latency_histogram(std::uint64_t value) { ::hdr_record_value(latency_hist.get(), value); }
 
   std::uint64_t ops = 0;
   std::uint64_t msgs = 0;

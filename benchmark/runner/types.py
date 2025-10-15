@@ -10,6 +10,7 @@ class FixedParams:
     duration_sec: int = 10
     msg_size: int = 32
     senders: int = 1
+    msgs_per_sec: int = 0  # 0 = as fast as possible
     conns_per_sender: int = 1
     # receivers:
     workers: int = 1

@@ -30,7 +30,7 @@ public:
   sender(int id, config const& cfg);
 
   void connect(std::string const& host, std::string const& port, std::string const& bind_address);
-  void start(std::atomic<int>& shutdown_counter);
+  void start(std::atomic<int>& shutdown_counter, int cpu_id = -1);
   void stop();
 
   std::uint64_t total_msgs_sent() const { return total_msgs_sent_.load(std::memory_order_relaxed); }
@@ -38,8 +38,6 @@ public:
 
 private:
   void run();
-  void run_after_n_messages();
-  void run_after_n_seconds();
 
   const config cfg_;
   std::vector<connection> conns_;

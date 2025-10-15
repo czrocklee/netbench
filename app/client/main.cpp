@@ -28,15 +28,15 @@ int main(int argc, char** argv)
   app.add_option("-s,--senders", senders, "Number of senders")->default_val(1);
 
   int msgs_per_sec;
-  app.add_option("-m,--msgs-per-sec", msgs_per_sec, "Messages per second per sender")
-    ->default_val(1000)
+  app.add_option("-m,--msgs-per-sec", msgs_per_sec, "Messages per second per sender (0 = unlimited)")
+    ->default_val(0)
     ->transform(CLI::AsSizeValue(true));
 
   app.add_option("-z,--msg-size", cfg.msg_size, "Message size in bytes")
     ->default_val(1024)
     ->transform(CLI::AsSizeValue(false));
 
-  app.add_flag("-n,--nodelay", cfg.nodelay, "Enable TCP_NODELAY")->default_val(false);
+  app.add_flag("-n,--nodelay", cfg.nodelay, "Enable TCP_NODELAY")->default_val(true);
 
   app.add_flag("-d,--drain", cfg.drain, "Enable receive buffer draining")->default_val(false);
 
@@ -50,8 +50,7 @@ int main(int argc, char** argv)
 
   app.add_option("--stop-after-n-secs", cfg.stop_after_n_seconds, "Stop after n seconds")->default_val(0);
 
-  app.add_option("--max-batch-size", cfg.max_batch_size, "Max batch size for send operations")
-    ->default_val(IOV_MAX);
+  app.add_option("--max-batch-size", cfg.max_batch_size, "Max batch size for send operations")->default_val(IOV_MAX);
 
   int metric_hud_interval_secs;
   app
@@ -59,16 +58,21 @@ int main(int argc, char** argv)
       "-M,--metric-hud-interval-secs", metric_hud_interval_secs, "Metric HUD interval in seconds, 0 for disabled")
     ->default_val(5);
 
+  // Optional CPU pinning for sender threads (comma-separated list)
+  std::vector<int> sender_cpus; // size <= senders; others unpinned
+  app.add_option("--sender-cpus", sender_cpus, "Comma-separated CPU IDs for each sender (optional)")->delimiter(',');
+
   CLI11_PARSE(app, argc, argv);
 
-  cfg.msgs_per_sec = msgs_per_sec / senders;
+  cfg.msgs_per_sec = msgs_per_sec > 0 ? (msgs_per_sec / senders) : 0;
 
   std::cout << "Target address: " << address << std::endl;
   std::cout << "Bind address: " << (bind_address.empty() ? "not set" : bind_address) << std::endl;
   std::cout << "Senders: " << senders << std::endl;
   std::cout << "Connections per sender: " << cfg.conns << std::endl;
   std::cout << "Message size: " << cfg.msg_size << " bytes" << std::endl;
-  std::cout << "Messages per second per sender: " << cfg.msgs_per_sec << std::endl;
+  std::cout << "Messages per second per sender: "
+            << (cfg.msgs_per_sec > 0 ? std::to_string(cfg.msgs_per_sec) : std::string("unlimited")) << std::endl;
   std::cout << "Stop after n messages: "
             << (cfg.stop_after_n_messages > 0 ? std::to_string(cfg.stop_after_n_messages) : "disabled") << std::endl;
   std::cout << "Stop after n seconds: "
@@ -102,7 +106,15 @@ int main(int argc, char** argv)
   {
     auto& s = ss.emplace_back(i, cfg);
     s.connect(host, port, bind_address);
-    s.start(shutdown_counter);
+
+    int cpu_id = -1;
+
+    if (!sender_cpus.empty() && i < static_cast<int>(sender_cpus.size()))
+    {
+      cpu_id = sender_cpus[i];
+    }
+
+    s.start(shutdown_counter, cpu_id);
   }
 
   auto metric_hud = setup_metric_hud(std::chrono::seconds{metric_hud_interval_secs}, [&ss, &cfg] {

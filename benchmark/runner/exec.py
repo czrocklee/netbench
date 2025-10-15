@@ -10,7 +10,7 @@ import time
 import argparse
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, get_type_hints, Set
+from typing import Dict, List, Optional, Sequence, get_type_hints, Set, Iterable
 import os
 
 from .constants import IMPL_BIN_NAME, CLIENT_BIN_NAME
@@ -94,24 +94,88 @@ def choose_worker_cpus(n_workers: int) -> List[int]:
     if not avail:
         return []
     groups = _thread_sibling_groups(avail)
-    primaries = [g[0] for g in groups if g]
+    # Prefer non-zero CPUs first: stable-partition groups so the group whose primary is 0 comes last
+    groups_nonzero = [g for g in groups if g and g[0] != 0]
+    groups_zero = [g for g in groups if g and g[0] == 0]
+    ordered_groups = groups_nonzero + groups_zero
+
     order: List[int] = []
-    # First pass: one per core
-    for c in primaries:
+    # First pass: pick one hardware thread per core (exclude CPU 0 primary until the end)
+    for g in ordered_groups:
+        if not g:
+            continue
+        c = g[0]
+        if c == 0 and len(groups_zero) == 1:
+            # Defer CPU 0 until we really need it
+            continue
         if len(order) >= n_workers:
             break
         order.append(c)
-    if len(order) >= n_workers:
-        return order[:n_workers]
-    # Second pass: fill remaining with siblings
-    for g in groups:
-        for c in g[1:]:
+
+    if len(order) < n_workers:
+        # If still short, fill with siblings, skipping CPU 0 until the very end
+        for g in ordered_groups:
+            # start from siblings
+            for c in g[1:]:
+                if c == 0:
+                    continue
+                if len(order) >= n_workers:
+                    break
+                order.append(c)
             if len(order) >= n_workers:
                 break
-            order.append(c)
-        if len(order) >= n_workers:
-            break
+
+    if len(order) < n_workers and 0 in avail:
+        # Finally include CPU 0 if we still need more
+        order.append(0)
+
     return order[:n_workers]
+
+
+def choose_cpus(n: int, exclude: Optional[Set[int]] = None) -> List[int]:
+    """Choose up to n CPUs similar to choose_worker_cpus, with optional exclusion set."""
+    avail_list = _available_cpus()
+    avail: Set[int] = set(avail_list)
+    if exclude:
+        avail -= set(exclude)
+    if not avail:
+        return []
+    groups = _thread_sibling_groups(avail)
+    groups_nonzero = [g for g in groups if g and g[0] != 0]
+    groups_zero = [g for g in groups if g and g[0] == 0]
+    ordered_groups = groups_nonzero + groups_zero
+
+    order: List[int] = []
+    for g in ordered_groups:
+        if not g:
+            continue
+        c = g[0]
+        if c == 0 and len(groups_zero) == 1:
+            continue
+        if len(order) >= n:
+            break
+        order.append(c)
+    if len(order) < n:
+        for g in ordered_groups:
+            for c in g[1:]:
+                if c == 0:
+                    continue
+                if len(order) >= n:
+                    break
+                order.append(c)
+            if len(order) >= n:
+                break
+    if len(order) < n and 0 in avail:
+        order.append(0)
+    return order[:n]
+
+
+def _has_flag_or_kv(tokens: Iterable[str], name: str) -> bool:
+    name_eq = name + "="
+    for tok in tokens or []:
+        if tok == name or tok.startswith(name_eq):
+            return True
+    return False
 
 
 class Runner:
@@ -122,7 +186,8 @@ class Runner:
                  receiver_app_dir: Optional[Path] = None,
                  client_app_dir: Optional[Path] = None,
                  impl_extra_args: Optional[Dict[str, List[str]]] = None,
-                 auto_pin_workers: bool = True):
+                 auto_pin_workers: bool = True,
+                 client_extra_args: Optional[List[str]] = None):
         self.app_dir = app_dir
         self.receiver_host = receiver_host
         self.client_host = client_host
@@ -130,6 +195,18 @@ class Runner:
         self.client_app_dir = client_app_dir or app_dir
         self.impl_extra_args = impl_extra_args or {}
         self.auto_pin_workers = auto_pin_workers
+        self.client_extra_args = client_extra_args or []
+
+    def _preset_sender_cpus(self, fixed: FixedParams) -> List[int]:
+        """Compute sender CPU list, avoiding overlap with receiver when both local."""
+        senders = int(getattr(fixed, 'senders', 0))
+        if senders <= 0:
+            return []
+        if self.client_host == "local" and self.receiver_host == "local":
+            workers = int(getattr(fixed, 'workers', 0))
+            recv = choose_worker_cpus(workers) if (self.auto_pin_workers and workers > 0) else []
+            return choose_cpus(senders, exclude=set(recv))
+        return choose_cpus(senders)
 
     def ensure_binaries(self, impls: Sequence[str]):
         if self.receiver_host == "local":
@@ -146,7 +223,8 @@ class Runner:
                 raise FileNotFoundError(f"Missing local client binary: {cpath}. Set --app-root correctly.")
 
     def _start_receiver(self, impl: str, fixed: FixedParams, results_dir: Path,
-                        extra_tags: Dict[str, str], extra_impl_args: List[str]) -> subprocess.Popen:
+                        extra_tags: Dict[str, str], extra_impl_args: List[str],
+                        preset_worker_cpus: Optional[List[int]] = None) -> subprocess.Popen:
         bin_name = IMPL_BIN_NAME[impl]
         args = [
             "--address", fixed.address,
@@ -165,9 +243,10 @@ class Runner:
             args += ["--so-sndbuf", str(fixed.send_so_sndbuf)]
         if fixed.echo != "none":
             args += ["--echo", fixed.echo]
-        # Auto CPU pinning: compute a comma-separated CPU list for workers
-        if self.auto_pin_workers and fixed.workers > 0:
-            cpus = choose_worker_cpus(int(fixed.workers))
+        # Auto CPU pinning: compute a comma-separated CPU list for workers, unless user provided one
+        user_specified_worker_cpus = _has_flag_or_kv(extra_impl_args, "--worker-cpus")
+        if self.auto_pin_workers and fixed.workers > 0 and not user_specified_worker_cpus:
+            cpus = list(preset_worker_cpus or choose_worker_cpus(int(fixed.workers)))
             if cpus:
                 args += ["--worker-cpus", ",".join(str(c) for c in cpus)]
         for k, v in extra_tags.items():
@@ -189,21 +268,27 @@ class Runner:
     def _run_client(self, fixed: FixedParams, duration_sec: int, results_dir: Path) -> int:
         args = [
             "--address", fixed.address,
-            "--senders", str(fixed.senders),
-            "--conns-per-sender", str(fixed.conns_per_sender),
-            "--msg-size", str(fixed.msg_size),
+            "--senders", str(getattr(fixed, 'senders', 0)),
+            "--conns-per-sender", str(getattr(fixed, 'conns_per_sender', 1)),
+            "--msg-size", str(getattr(fixed, 'msg_size', 0)),
+            "--msgs-per-sec", str(getattr(fixed, 'msgs_per_sec', 0)),
             "--stop-after-n-secs", str(duration_sec),
-            "--max-batch-size", str(fixed.max_batch_size),
-            "--metric-hud-interval-secs", str(fixed.metric_hud_interval_secs),
+            "--max-batch-size", str(getattr(fixed, 'max_batch_size', 0)),
+            "--metric-hud-interval-secs", str(getattr(fixed, 'metric_hud_interval_secs', 0)),
         ]
+        # Auto-inject sender CPUs unless user provided their own in client args
+        if not _has_flag_or_kv(self.client_extra_args, "--sender-cpus"):
+            scpus = self._preset_sender_cpus(fixed)
+            if scpus:
+                args += ["--sender-cpus", ",".join(str(c) for c in scpus)]
         log = (results_dir / "client.log").open("w")
         if self.client_host == "local":
-            full_cmd = [str(self.client_app_dir / CLIENT_BIN_NAME)] + args
+            full_cmd = [str(self.client_app_dir / CLIENT_BIN_NAME)] + args + list(self.client_extra_args)
             (results_dir / "client_cmd.log").write_text(" ".join(shlex.quote(c) for c in full_cmd))
             return subprocess.call(full_cmd, stdout=log, stderr=subprocess.STDOUT, cwd=str(self.client_app_dir))
         else:
             remote_cmd = f"cd {shlex.quote(str(self.client_app_dir))} && ./" + shlex.quote(CLIENT_BIN_NAME)
-            remote_cmd += " " + " ".join(shlex.quote(a) for a in args)
+            remote_cmd += " " + " ".join(shlex.quote(a) for a in (args + list(self.client_extra_args)))
             full_cmd = ["ssh", self.client_host, remote_cmd]
             (results_dir / "client_cmd.log").write_text(" ".join(shlex.quote(c) for c in full_cmd))
             return subprocess.call(full_cmd, stdout=log, stderr=subprocess.STDOUT)
