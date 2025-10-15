@@ -58,7 +58,7 @@ public:
   explicit worker(config cfg);
   ~worker();
 
-  void start(bool busy_spin);
+  void start(bool busy_spin, int cpu_id = -1);
   void stop();
   void add_connection(net::socket sock);
   bool post(std::move_only_function<void()> task);

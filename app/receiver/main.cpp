@@ -54,6 +54,11 @@ int main(int argc, char const* argv[])
   unsigned num_workers;
   app.add_option("-w,--workers", num_workers, "Number of worker threads to start")->default_val(1);
 
+  // CPU affinity list: accept a comma-separated list (e.g., 0,2,4) mapping to worker indices 0..n-1
+  std::vector<int> worker_cpus; // size <= num_workers; others unpinned
+  app.add_option("--worker-cpus", worker_cpus, "Comma-separated CPU IDs for workers in index order (e.g., 0,2,4)")
+    ->delimiter(',');
+
   std::string log_file;
   app.add_option("-l,--log-file", log_file, "Path to log file")->default_val("/tmp/receiver.log");
 
@@ -148,7 +153,8 @@ int main(int argc, char const* argv[])
       cfg.params = params;
 #endif
 
-      workers.emplace_back(std::make_unique<worker>(cfg))->start(busy_spin);
+      workers.emplace_back(std::make_unique<worker>(cfg))
+        ->start(busy_spin, i < worker_cpus.size() && worker_cpus[i] >= 0 ? worker_cpus[i] : -1);
     }
 
     net::acceptor acceptor{io_ctx};

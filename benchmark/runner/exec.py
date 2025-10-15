@@ -10,7 +10,8 @@ import time
 import argparse
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, get_type_hints
+from typing import Dict, List, Optional, Sequence, get_type_hints, Set
+import os
 
 from .constants import IMPL_BIN_NAME, CLIENT_BIN_NAME
 from .types import FixedParams, Scenario
@@ -24,6 +25,95 @@ def ts_utc_compact() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
 
 
+def _parse_cpulist_spec(spec: str) -> List[int]:
+    # Parse cpulist strings like "0-3,8,10-11"
+    out: List[int] = []
+    for part in spec.split(","):
+        p = part.strip()
+        if not p:
+            continue
+        if "-" in p:
+            a, b = p.split("-", 1)
+            start = int(a); end = int(b)
+            if start <= end:
+                out.extend(range(start, end + 1))
+            else:
+                out.extend(range(start, end - 1, -1))
+        else:
+            out.append(int(p))
+    return out
+
+
+def _available_cpus() -> List[int]:
+    # Prefer current process affinity if available
+    try:
+        if hasattr(os, "sched_getaffinity"):
+            return sorted(int(c) for c in os.sched_getaffinity(0))
+    except Exception:
+        pass
+    try:
+        n = os.cpu_count() or 1
+        return list(range(n))
+    except Exception:
+        return [0]
+
+
+def _thread_sibling_groups(avail: Set[int]) -> List[List[int]]:
+    # Build SMT sibling groups from sysfs; each group is a list of CPU ids (primary first)
+    groups: List[List[int]] = []
+    seen: Set[int] = set()
+    base = "/sys/devices/system/cpu"
+    for cpu in sorted(avail):
+        if cpu in seen:
+            continue
+        path = os.path.join(base, f"cpu{cpu}", "topology", "thread_siblings_list")
+        try:
+            with open(path, "r") as f:
+                spec = f.read().strip()
+            sibs = [c for c in _parse_cpulist_spec(spec) if c in avail]
+            if not sibs:
+                sibs = [cpu]
+        except Exception:
+            sibs = [cpu]
+        for c in sibs:
+            seen.add(c)
+        groups.append(sorted(sibs))
+    # Sort groups by their primary (lowest id)
+    groups.sort(key=lambda g: g[0] if g else 1 << 30)
+    return groups
+
+
+def choose_worker_cpus(n_workers: int) -> List[int]:
+    """Choose up to n_workers CPU ids prioritizing one hardware thread per core first.
+
+    Strategy: use sysfs thread_siblings_list to get SMT groups, pick one per group, then fill siblings if needed.
+    Falls back to simple ascending CPU ids.
+    """
+    avail_list = _available_cpus()
+    avail: Set[int] = set(avail_list)
+    if not avail:
+        return []
+    groups = _thread_sibling_groups(avail)
+    primaries = [g[0] for g in groups if g]
+    order: List[int] = []
+    # First pass: one per core
+    for c in primaries:
+        if len(order) >= n_workers:
+            break
+        order.append(c)
+    if len(order) >= n_workers:
+        return order[:n_workers]
+    # Second pass: fill remaining with siblings
+    for g in groups:
+        for c in g[1:]:
+            if len(order) >= n_workers:
+                break
+            order.append(c)
+        if len(order) >= n_workers:
+            break
+    return order[:n_workers]
+
+
 class Runner:
     def __init__(self,
                  app_dir: Path,
@@ -31,13 +121,15 @@ class Runner:
                  client_host: str = "local",
                  receiver_app_dir: Optional[Path] = None,
                  client_app_dir: Optional[Path] = None,
-                 impl_extra_args: Optional[Dict[str, List[str]]] = None):
+                 impl_extra_args: Optional[Dict[str, List[str]]] = None,
+                 auto_pin_workers: bool = True):
         self.app_dir = app_dir
         self.receiver_host = receiver_host
         self.client_host = client_host
         self.receiver_app_dir = receiver_app_dir or app_dir
         self.client_app_dir = client_app_dir or app_dir
         self.impl_extra_args = impl_extra_args or {}
+        self.auto_pin_workers = auto_pin_workers
 
     def ensure_binaries(self, impls: Sequence[str]):
         if self.receiver_host == "local":
@@ -73,6 +165,11 @@ class Runner:
             args += ["--so-sndbuf", str(fixed.send_so_sndbuf)]
         if fixed.echo != "none":
             args += ["--echo", fixed.echo]
+        # Auto CPU pinning: compute a comma-separated CPU list for workers
+        if self.auto_pin_workers and fixed.workers > 0:
+            cpus = choose_worker_cpus(int(fixed.workers))
+            if cpus:
+                args += ["--worker-cpus", ",".join(str(c) for c in cpus)]
         for k, v in extra_tags.items():
             args += ["--tag", f"{k}={v}"]
         args += list(extra_impl_args or [])

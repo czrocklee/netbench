@@ -1,6 +1,7 @@
 #include "worker.hpp"
-#include "../common/metadata.hpp"
-#include "utility/time.hpp"
+#include "metadata.hpp"
+#include "utils.hpp"
+#include <utility/time.hpp>
 
 #include <magic_enum/magic_enum.hpp>
 #include <asio/socket_base.hpp>
@@ -38,9 +39,16 @@ worker::~worker()
   stop();
 }
 
-void worker::start(bool busy_spin)
+void worker::start(bool busy_spin, int cpu_id)
 {
-  thread_ = std::thread{[this, busy_spin] { busy_spin ? run_busy_spin() : run(); }};
+  thread_ = std::thread{[this, busy_spin, cpu_id] {
+    if (cpu_id >= 0)
+    {
+      set_thread_cpu_affinity(cpu_id);
+    }
+
+    busy_spin ? run_busy_spin() : run();
+  }};
 }
 
 void worker::stop()
