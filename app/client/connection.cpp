@@ -5,6 +5,8 @@
 
 #include <iostream>
 #include <cstring>
+#include <thread>
+#include <chrono>
 
 namespace
 {
@@ -92,6 +94,9 @@ std::size_t connection::try_send(std::size_t count)
     std::terminate();
   }
 
+  // Track total bytes sent for drain parity
+  total_sent_bytes_ += bytes_sent;
+
   if (bytes_to_drain_ >= 0 && (bytes_to_drain_ += bytes_sent) > 1024 * 16)
   {
     try_drain_socket();
@@ -126,5 +131,6 @@ void connection::try_drain_socket()
   {
     char dummy;
     bytes_read = sock_.recv(&dummy, 1024 * 1024, MSG_TRUNC | MSG_DONTWAIT);
+    total_drained_bytes_ += bytes_read;
   } while (bytes_read > 0);
 }

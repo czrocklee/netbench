@@ -121,9 +121,45 @@ void sender::start(std::atomic<int>& shutdown_counter, int cpu_id)
       }
     }
 
+    // If drain mode is enabled, wait until we've drained at least the same
+    // amount of data back (e.g., echoed responses) as we sent before closing.
+    if (cfg_.drain)
+    {
+      bool all_drained = false;
+      auto const drain_stop_time = std::chrono::steady_clock::now() + std::chrono::seconds{10};
+
+      do
+      {
+        if (std::chrono::steady_clock::now() >= drain_stop_time)
+        {
+          throw std::runtime_error{"sender: drain timeout exceeded"};
+        }
+
+        all_drained = true;
+
+        for (auto& conn : conns_)
+        {
+          if (conn.is_open())
+          {
+            conn.try_drain_socket();
+
+            if (conn.bytes_drained_total() == conn.bytes_sent_total())
+            {
+              conn.close();
+            }
+            else
+            {
+              all_drained = false;
+            }
+          }
+        }
+      } while (!all_drained);
+    }
+
     for (auto& conn : conns_)
     {
-      conn.close();
+      std::cout << "Connection " << conn.bytes_sent_total() << " bytes sent, " << conn.bytes_drained_total()
+                << " bytes drained." << std::endl;
     }
 
     shutdown_counter.fetch_sub(1);

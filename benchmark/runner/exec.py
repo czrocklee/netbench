@@ -276,6 +276,8 @@ class Runner:
             "--max-batch-size", str(getattr(fixed, 'max_batch_size', 0)),
             "--metric-hud-interval-secs", str(getattr(fixed, 'metric_hud_interval_secs', 0)),
         ]
+        if getattr(fixed, 'drain', False):
+            args += ["--drain"]
         # Auto-inject sender CPUs unless user provided their own in client args
         if not _has_flag_or_kv(self.client_extra_args, "--sender-cpus"):
             scpus = self._preset_sender_cpus(fixed)

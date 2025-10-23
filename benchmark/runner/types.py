@@ -12,6 +12,7 @@ class FixedParams:
     senders: int = 1
     msgs_per_sec: int = 0  # 0 = as fast as possible
     conns_per_sender: int = 1
+    drain: bool = False
     # receivers:
     workers: int = 1
     busy_spin: bool = False
