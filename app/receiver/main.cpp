@@ -103,6 +103,13 @@ int main(int argc, char const* argv[])
     ->default_val(1024 * 16)
     ->transform(CLI::AsSizeValue(false));
 
+  app
+    .add_option(
+      "--per-connection-buffer-pool",
+      cfg.per_connection_buffer_pool,
+      "Each connection uses its own provided_buffer_pool")
+    ->default_val(false);
+
 #elifdef BSD_API
   app.add_option("--read-limit", cfg.read_limit, "Optional read limit for BSD API (0 for no limit)")
     ->default_val(0)

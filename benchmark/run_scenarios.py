@@ -21,16 +21,19 @@ if __package__ is None or __package__ == "":
     from benchmark.runner.constants import IMPL_BIN_NAME
     from benchmark.runner.types import FixedParams, Scenario
     from benchmark.runner.exec import run_from_args
+
     REPO_ROOT = _REPO_ROOT
 else:
     from .runner.constants import IMPL_BIN_NAME
     from .runner.types import FixedParams, Scenario
     from .runner.exec import run_from_args
+
     REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def get_default_ip_address() -> str:
     import socket
+
     s = None
     try:
         # This is a common trick to get the primary non-loopback IP.
@@ -47,20 +50,21 @@ def get_default_ip_address() -> str:
             s.close()
     return ip
 
+
 def default_scenarios() -> List[Scenario]:
     fixed = FixedParams(
         address=f"{get_default_ip_address()}:19004",
         duration_sec=15,
         msg_size=32,
         senders=1,
-        conns_per_sender=1,    
+        conns_per_sender=1,
         busy_spin=False,
         echo="none",
         drain=False,
         buffer_size=32,
         max_batch_size=1024,
         metric_hud_interval_secs=0,
-        collect_latency_every_n_samples=1000,
+        collect_latency_every_n_samples=0,
     )
     return [
         Scenario(
@@ -69,7 +73,7 @@ def default_scenarios() -> List[Scenario]:
             fixed=fixed,
             var_key="workers",
             var_values=[1, 2, 4, 8],
-            linkages={"senders": "workers"},
+            linkages={"senders": lambda fixed: int(fixed.workers)},
             implementations=["bsd", "uring", "asio", "asio_uring"],
         ),
         Scenario(
@@ -83,7 +87,7 @@ def default_scenarios() -> List[Scenario]:
         Scenario(
             name="echo_throughput_by_buffer_size",
             title="Echo (per_op) Throughput by Buffer Size",
-            fixed=dc.replace(fixed, echo="per_msg", drain=True, collect_latency_every_n_samples=0),
+            fixed=dc.replace(fixed, echo="per_op", drain=True),
             var_key="buffer_size",
             var_values=[32, 128, 256, 512],
             implementations=["bsd", "uring", "asio", "asio_uring"],
@@ -91,10 +95,14 @@ def default_scenarios() -> List[Scenario]:
         Scenario(
             name="receive_latency_by_message_rate",
             title="Receive Latency by Message Rate",
-            fixed=fixed,
+            fixed=dc.replace(fixed, nodelay=True),
             var_key="msgs_per_sec",
             var_values=[1000, 10000, 100000, 1000000],
-            linkages={"collect_latency_every_n_samples": "max(msgs_per_sec // 100000, 1)"},
+            linkages={
+                "collect_latency_every_n_samples": lambda fixed: max(
+                    int(fixed.msgs_per_sec) // 100_000, 1
+                )
+            },
             implementations=["bsd", "uring", "asio", "asio_uring"],
         ),
     ]

@@ -29,6 +29,9 @@ namespace utility
     {
     }
 
+    ref_or_own(ref_or_own&&) = default;
+    ref_or_own& operator=(ref_or_own&&) = default;
+
     // Access as reference
     T& get()
     {
@@ -63,6 +66,9 @@ namespace utility
     bool is_own() const { return std::holds_alternative<own_type>(storage_); }
 
   private:
+    ref_or_own(ref_or_own const&) = delete;
+    ref_or_own& operator=(ref_or_own const&) = delete;
+
     using ref_type = std::reference_wrapper<T>;
     using own_type = T;
     std::variant<std::monostate, ref_type, own_type> storage_;

@@ -36,9 +36,9 @@ int main(int argc, char** argv)
     ->default_val(1024)
     ->transform(CLI::AsSizeValue(false));
 
-  app.add_flag("-n,--nodelay", cfg.nodelay, "Enable TCP_NODELAY")->default_val(true);
+  app.add_flag("-n,--nodelay", cfg.nodelay, "Enable TCP_NODELAY");
 
-  app.add_flag("-d,--drain", cfg.drain, "Enable receive buffer draining")->default_val(false);
+  app.add_flag("-d,--drain", cfg.drain, "Enable receive buffer draining");
 
   app.add_option("-S,--socket-buffer-size", cfg.socket_buffer_size, "Socket buffer size in bytes")
     ->default_val(0)

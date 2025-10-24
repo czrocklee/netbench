@@ -49,6 +49,7 @@ public:
     std::uint32_t uring_depth;
     std::uint16_t buffer_count;
     std::uint16_t buffer_group_id;
+    bool per_connection_buffer_pool = false;
     ::io_uring_params params{};
 #elifdef BSD_API
     unsigned read_limit = 0;
@@ -92,7 +93,7 @@ private:
   std::atomic<bool> stop_flag_{false};
   net::io_context io_ctx_;
 #ifdef IO_URING_API
-  uring::provided_buffer_pool recv_pool_;
+  std::unique_ptr<uring::provided_buffer_pool> recv_pool_;
 #endif
   metric metrics_{};
   std::list<connection> connections_;

@@ -12,11 +12,6 @@ worker::worker(config cfg)
   : config_{std::move(cfg)},
 #ifdef IO_URING_API
     io_ctx_{config_.uring_depth, config_.params},
-    recv_pool_{
-      io_ctx_,
-      config_.buffer_size,
-      config_.buffer_count,
-      uring::provided_buffer_pool::group_id_type{config_.buffer_group_id}},
 #elifdef ASIO_API
     io_ctx_{1},
 #endif
@@ -24,7 +19,15 @@ worker::worker(config cfg)
 {
   metrics_.init_histogram();
 #ifdef IO_URING_API
-  recv_pool_.populate_buffers();
+  if (!config_.per_connection_buffer_pool)
+  {
+    recv_pool_ = std::make_unique<uring::provided_buffer_pool>(
+      io_ctx_,
+      config_.buffer_size,
+      config_.buffer_count,
+      uring::provided_buffer_pool::group_id_type{config_.buffer_group_id});
+    recv_pool_->populate_buffers();
+  }
 
   if (config_.echo != config::echo_mode::none)
   {
@@ -72,7 +75,22 @@ void worker::add_connection(net::socket sock)
   {
 #ifdef IO_URING_API
     sock.fix_file_handle(io_ctx_);
-    auto iter = connections_.emplace(connections_.begin(), io_ctx_, recv_pool_);
+    auto iter = [&]() {
+      if (config_.per_connection_buffer_pool)
+      {
+        auto per_pool = uring::provided_buffer_pool{
+          io_ctx_,
+          config_.buffer_size,
+          config_.buffer_count,
+          uring::provided_buffer_pool::group_id_type::cast_from(sock.get_fd())};
+        per_pool.populate_buffers();
+        return connections_.emplace(connections_.begin(), io_ctx_, std::move(per_pool));
+      }
+      else
+      {
+        return connections_.emplace(connections_.begin(), io_ctx_, *recv_pool_);
+      }
+    }();
 #else
     auto iter = connections_.emplace(connections_.begin(), io_ctx_, config_.buffer_size);
 #endif

@@ -10,12 +10,11 @@ import time
 import argparse
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, get_type_hints, Set, Iterable
+from typing import Dict, List, Optional, Sequence, get_type_hints, Set, Iterable, Callable
 import os
 
 from .constants import IMPL_BIN_NAME, CLIENT_BIN_NAME
 from .types import FixedParams, Scenario
-from .linkage import eval_link_expr
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -243,6 +242,16 @@ class Runner:
             args += ["--so-sndbuf", str(fixed.send_so_sndbuf)]
         if fixed.echo != "none":
             args += ["--echo", fixed.echo]
+
+        if impl == "bsd":
+            if fixed.bsd_read_limit > 0:
+                args += ["--read-limit", str(fixed.bsd_read_limit)]        
+        elif impl == "uring":
+            if fixed.uring_buffer_count > 0:
+                args += ["--buffer-count", str(fixed.uring_buffer_count)]
+            if fixed.uring_per_conn_buffer_pool:
+                args += ["--per-connection-buffer-pool", "true"] 
+
         # Auto CPU pinning: compute a comma-separated CPU list for workers, unless user provided one
         user_specified_worker_cpus = _has_flag_or_kv(extra_impl_args, "--worker-cpus")
         if self.auto_pin_workers and fixed.workers > 0 and not user_specified_worker_cpus:
@@ -276,8 +285,10 @@ class Runner:
             "--max-batch-size", str(getattr(fixed, 'max_batch_size', 0)),
             "--metric-hud-interval-secs", str(getattr(fixed, 'metric_hud_interval_secs', 0)),
         ]
-        if getattr(fixed, 'drain', False):
+        if fixed.drain:
             args += ["--drain"]
+        if fixed.nodelay:
+            args += ["--nodelay"]
         # Auto-inject sender CPUs unless user provided their own in client args
         if not _has_flag_or_kv(self.client_extra_args, "--sender-cpus"):
             scpus = self._preset_sender_cpus(fixed)
@@ -317,7 +328,20 @@ class Runner:
         sc_dir.mkdir(parents=True, exist_ok=True)
         if cli_args:
             (sc_dir / "cli_args.json").write_text(json.dumps(vars(cli_args), indent=2, default=str))
-        (sc_dir / "scenario.json").write_text(json.dumps(dc.asdict(sc), indent=2))
+        def _scenario_asdict_json(s: Scenario) -> Dict:
+            d = dc.asdict(s)
+            # Make linkages JSON-friendly if they contain callables
+            try:
+                links = d.get("linkages") or {}
+                for k, v in list(links.items()):
+                    if callable(v):
+                        name = getattr(v, "__name__", None)
+                        links[k] = f"callable:{name or repr(v)}"
+            except Exception:
+                pass
+            return d
+
+        (sc_dir / "scenario.json").write_text(json.dumps(_scenario_asdict_json(sc), indent=2))
 
         for impl in sc.implementations:
             impl_dir = sc_dir / impl
@@ -333,7 +357,11 @@ class Runner:
                     for target, expr in sc.linkages.items():
                         if not hasattr(fixed, target):
                             raise AttributeError(f"FixedParams has no field '{target}' (from linkage)")
-                        result = eval_link_expr(expr, fixed, sc.var_key, val)
+                        # Only single-argument callables are supported: fn(fixed) -> Any
+                        if not callable(expr):
+                            raise TypeError(
+                                f"Unsupported linkage type for '{target}': expected callable, got {type(expr).__name__}")
+                        result = expr(fixed)
                         # Coerce to the type of the target field
                         current = getattr(fixed, target)
                         if isinstance(current, bool):
@@ -530,8 +558,16 @@ def run_from_args(args, scenarios: List[Scenario]) -> int:
 
     if getattr(args, 'dry_run', False):
         print("Planned runs:")
+        def _scenario_asdict_json(s: Scenario) -> Dict:
+            d = dc.asdict(s)
+            links = d.get("linkages") or {}
+            for k, v in list(links.items()):
+                if callable(v):
+                    name = getattr(v, "__name__", None)
+                    links[k] = f"callable:{name or repr(v)}"
+            return d
         for s in scs:
-            print(json.dumps(dc.asdict(s), indent=2))
+            print(json.dumps(_scenario_asdict_json(s), indent=2))
         print("Runner:", json.dumps({
             "receiver_host": args.receiver_host,
             "client_host": args.client_host,

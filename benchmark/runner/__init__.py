@@ -2,7 +2,6 @@
 
 Modules:
 - constants: binary names and mappings
-- types: dataclasses for FixedParams and Scenario
-- linkage: safe expression evaluator for linkages
+- types: dataclasses for FixedParams and Scenario (linkages are Python callables)
 - exec: core orchestration logic
 """

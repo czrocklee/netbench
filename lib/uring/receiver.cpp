@@ -9,9 +9,9 @@
 
 namespace uring
 {
-  receiver::receiver(io_context& io_ctx, provided_buffer_pool& buffer_pool) : io_ctx_{io_ctx}, buffer_pool_{buffer_pool}
-  {
-  }
+  receiver::receiver(io_context& io_ctx, buffer_pool_type buffer_pool)
+    : io_ctx_{io_ctx}, buffer_pool_{std::move(buffer_pool)}
+  {}
 
   void receiver::open(socket sock)
   {
@@ -52,14 +52,14 @@ namespace uring
       return;
     }
 
-    using buffer_id_type = provided_buffer_pool::buffer_id_type;
     std::size_t bytes_received = static_cast<std::size_t>(cqe.res);
-    auto buf_id = buffer_id_type{static_cast<buffer_id_type::value_type>(cqe.flags >> IORING_CQE_BUFFER_SHIFT)};
-    std::byte* buffer = buffer_pool_.get_buffer_address(buf_id);
+    auto buf_id = provided_buffer_pool::buffer_id_type{
+      static_cast<std::uint16_t>(cqe.flags >> IORING_CQE_BUFFER_SHIFT)};
+  std::byte* buffer = buffer_pool_.get().get_buffer_address(buf_id);
 
     data_cb_({}, ::asio::const_buffer{buffer, bytes_received});
 
-    buffer_pool_.push_buffer(buf_id);
+  buffer_pool_.get().push_buffer(buf_id);
 
     if (!(cqe.flags & IORING_CQE_F_MORE))
     {
@@ -75,7 +75,7 @@ namespace uring
     file_handle.update_sqe_flag(sqe);
     ::io_uring_prep_recv_multishot(&sqe, file_handle.get_fd(), nullptr, 0, 0);
     sqe.flags |= IOSQE_BUFFER_SELECT;
-    sqe.buf_group = buffer_pool_.get_group_id();
+    sqe.buf_group = buffer_pool_.get().get_group_id();
   }
 
 } // namespace uring

@@ -25,6 +25,8 @@ namespace uring
       std::uint16_t buf_cnt,
       group_id_type grp_id);
     ~provided_buffer_pool();
+    provided_buffer_pool(provided_buffer_pool&&) = default;
+    provided_buffer_pool& operator=(provided_buffer_pool&&) = default;
 
     void populate_buffers() noexcept;
     void push_buffer(buffer_id_type buf_id) noexcept;
@@ -41,8 +43,6 @@ namespace uring
   private:
     provided_buffer_pool(provided_buffer_pool const&) = delete;
     provided_buffer_pool& operator=(provided_buffer_pool const&) = delete;
-    provided_buffer_pool(provided_buffer_pool&&) = delete;
-    provided_buffer_pool& operator=(provided_buffer_pool&&) = delete;
 
     ::io_uring& ring_;
     std::unique_ptr<::io_uring_buf_ring, std::function<void(::io_uring_buf_ring*)>> buf_ring_;
