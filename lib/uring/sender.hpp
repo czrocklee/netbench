@@ -20,7 +20,7 @@ namespace uring
     using buffer_index_type = registered_buffer_pool::buffer_index_type;
     using socket_type = utility::ref_or_own<socket>;
 
-    sender(io_context& io_ctx, registered_buffer_pool& buf_pool, std::size_t max_buf_size = 1024 * 1024 * 64);
+    sender(io_context& io_ctx, std::size_t max_buf_size = 1024 * 1024 * 64);
 
     enum flags : int
     {
@@ -77,7 +77,7 @@ namespace uring
   {
     if (send_error_ > 0)
     {
-      throw std::runtime_error("send failed: " + std::string(strerror(send_error_)));
+      throw std::runtime_error{"send failed: " + std::string(strerror(send_error_))};
     }
 
     append_write_list(size, std::forward<F>(f));
@@ -93,6 +93,11 @@ namespace uring
   void sender::append_write_list(std::size_t size, F&& f)
   {
     auto const create_new_buf = [&] {
+      if (size > buf_pool_.get_buffer_size())
+      {
+        throw std::runtime_error{"sender: send size exceeds buffer size"};
+      }
+
       write_list_.push_back();
       auto& data = write_list_.back();
       data.index = buf_pool_.acquire_buffer();
@@ -136,7 +141,7 @@ namespace uring
     if (write_list_.full())
     {
       // std::terminate();
-      throw std::runtime_error("sender: insufficient buffer space");
+      throw std::runtime_error{"sender: insufficient buffer space"};
     }
 
     create_new_buf();

@@ -13,8 +13,23 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, get_type_hints, Set, Iterable, Callable
 import os
 
-from .constants import IMPL_BIN_NAME, CLIENT_BIN_NAME
+from .constants import RECEIVER_BIN_NAME, CLIENT_BIN_NAME, PINGPONG_BIN_NAME
 from .types import FixedParams, Scenario
+from .affinity import choose_cpus
+from .utils import has_flag_or_kv
+from .config import apply_fixedparams_overrides
+from .utils import apply_scenario_var_values, run_plot as _run_plot
+from .receiver_client import (
+    ensure_receiver_binaries as rc_ensure_binaries,
+    start_receiver as rc_start_receiver,
+    run_client as rc_run_client,
+    stop_receiver as rc_stop_receiver,
+)
+from .pingpong import (
+    ensure_pingpong_binaries as pp_ensure_binaries,
+    start_acceptor as pp_start_acceptor,
+    run_initiator as pp_run_initiator,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -23,159 +38,67 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 def ts_utc_compact() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
 
+# Single helper to assign CPUs when auto_cpu is enabled. Updates FixedParams in-place.
+def assign_auto_cpus_ids(
+    fixed: FixedParams,
+    receiver_host: str,
+    client_host: str,
+    mode: str,
+) -> None:
+    """Populate CPU-related fields in FixedParams in-place when running locally.
 
-def _parse_cpulist_spec(spec: str) -> List[int]:
-    # Parse cpulist strings like "0-3,8,10-11"
-    out: List[int] = []
-    for part in spec.split(","):
-        p = part.strip()
-        if not p:
-            continue
-        if "-" in p:
-            a, b = p.split("-", 1)
-            start = int(a); end = int(b)
-            if start <= end:
-                out.extend(range(start, end + 1))
-            else:
-                out.extend(range(start, end - 1, -1))
-        else:
-            out.append(int(p))
-    return out
-
-
-def _available_cpus() -> List[int]:
-    # Prefer current process affinity if available
-    try:
-        if hasattr(os, "sched_getaffinity"):
-            return sorted(int(c) for c in os.sched_getaffinity(0))
-    except Exception:
-        pass
-    try:
-        n = os.cpu_count() or 1
-        return list(range(n))
-    except Exception:
-        return [0]
-
-
-def _thread_sibling_groups(avail: Set[int]) -> List[List[int]]:
-    # Build SMT sibling groups from sysfs; each group is a list of CPU ids (primary first)
-    groups: List[List[int]] = []
-    seen: Set[int] = set()
-    base = "/sys/devices/system/cpu"
-    for cpu in sorted(avail):
-        if cpu in seen:
-            continue
-        path = os.path.join(base, f"cpu{cpu}", "topology", "thread_siblings_list")
-        try:
-            with open(path, "r") as f:
-                spec = f.read().strip()
-            sibs = [c for c in _parse_cpulist_spec(spec) if c in avail]
-            if not sibs:
-                sibs = [cpu]
-        except Exception:
-            sibs = [cpu]
-        for c in sibs:
-            seen.add(c)
-        groups.append(sorted(sibs))
-    # Sort groups by their primary (lowest id)
-    groups.sort(key=lambda g: g[0] if g else 1 << 30)
-    return groups
-
-
-def choose_worker_cpus(n_workers: int) -> List[int]:
-    """Choose up to n_workers CPU ids prioritizing one hardware thread per core first.
-
-    Strategy: use sysfs thread_siblings_list to get SMT groups, pick one per group, then fill siblings if needed.
-    Falls back to simple ascending CPU ids.
+    - mode == 'pingpong': assigns pp_acceptor_cpu, pp_initiator_cpu, and per-process sqpoll CPUs (uring only).
+    - mode == 'receiver': assigns worker_cpus and sender_cpus, avoiding overlaps when both ends are local.
     """
-    avail_list = _available_cpus()
-    avail: Set[int] = set(avail_list)
-    if not avail:
-        return []
-    groups = _thread_sibling_groups(avail)
-    # Prefer non-zero CPUs first: stable-partition groups so the group whose primary is 0 comes last
-    groups_nonzero = [g for g in groups if g and g[0] != 0]
-    groups_zero = [g for g in groups if g and g[0] == 0]
-    ordered_groups = groups_nonzero + groups_zero
+    if mode == 'pingpong':
+        used: Set[int] = set()
+        for val in (fixed.pp_acceptor_cpu, fixed.pp_initiator_cpu, fixed.pp_acceptor_sqpoll_cpu, fixed.pp_initiator_sqpoll_cpu):
+            if val is not None:
+                used.add(int(val))
 
-    order: List[int] = []
-    # First pass: pick one hardware thread per core (exclude CPU 0 primary until the end)
-    for g in ordered_groups:
-        if not g:
-            continue
-        c = g[0]
-        if c == 0 and len(groups_zero) == 1:
-            # Defer CPU 0 until we really need it
-            continue
-        if len(order) >= n_workers:
-            break
-        order.append(c)
+        if receiver_host == 'local':
+            if fixed.pp_acceptor_cpu is None:
+                acc = choose_cpus(1, exclude=used)
+                if acc:
+                    fixed.pp_acceptor_cpu = acc[0]
+                    used.add(acc[0])
+            if fixed.pp_acceptor_sqpoll_cpu is None:
+                sq = choose_cpus(1, exclude=used)
+                if sq:
+                    fixed.pp_acceptor_sqpoll_cpu = sq[0]
+                    used.add(sq[0])
 
-    if len(order) < n_workers:
-        # If still short, fill with siblings, skipping CPU 0 until the very end
-        for g in ordered_groups:
-            # start from siblings
-            for c in g[1:]:
-                if c == 0:
-                    continue
-                if len(order) >= n_workers:
-                    break
-                order.append(c)
-            if len(order) >= n_workers:
-                break
+        if client_host == 'local':
+            if fixed.pp_initiator_cpu is None:
+                ini = choose_cpus(1, exclude=used)
+                if ini:
+                    fixed.pp_initiator_cpu = ini[0]
+                    used.add(ini[0])
+            if fixed.pp_initiator_sqpoll_cpu is None:
+                sqi = choose_cpus(1, exclude=used)
+                if sqi:
+                    fixed.pp_initiator_sqpoll_cpu = sqi[0]
+                    used.add(sqi[0])
 
-    if len(order) < n_workers and 0 in avail:
-        # Finally include CPU 0 if we still need more
-        order.append(0)
+    else:
+        # receiver/client runs
+        if receiver_host == 'local' and not fixed.worker_cpus and int(fixed.workers) > 0:
+            rcpu = choose_cpus(int(fixed.workers))
+            if rcpu:
+                fixed.worker_cpus = ",".join(str(c) for c in rcpu)
 
-    return order[:n_workers]
-
-
-def choose_cpus(n: int, exclude: Optional[Set[int]] = None) -> List[int]:
-    """Choose up to n CPUs similar to choose_worker_cpus, with optional exclusion set."""
-    avail_list = _available_cpus()
-    avail: Set[int] = set(avail_list)
-    if exclude:
-        avail -= set(exclude)
-    if not avail:
-        return []
-    groups = _thread_sibling_groups(avail)
-    groups_nonzero = [g for g in groups if g and g[0] != 0]
-    groups_zero = [g for g in groups if g and g[0] == 0]
-    ordered_groups = groups_nonzero + groups_zero
-
-    order: List[int] = []
-    for g in ordered_groups:
-        if not g:
-            continue
-        c = g[0]
-        if c == 0 and len(groups_zero) == 1:
-            continue
-        if len(order) >= n:
-            break
-        order.append(c)
-    if len(order) < n:
-        for g in ordered_groups:
-            for c in g[1:]:
-                if c == 0:
-                    continue
-                if len(order) >= n:
-                    break
-                order.append(c)
-            if len(order) >= n:
-                break
-    if len(order) < n and 0 in avail:
-        order.append(0)
-    return order[:n]
-
-
-def _has_flag_or_kv(tokens: Iterable[str], name: str) -> bool:
-    name_eq = name + "="
-    for tok in tokens or []:
-        if tok == name or tok.startswith(name_eq):
-            return True
-    return False
-
+        if client_host == 'local' and not fixed.sender_cpus:
+            senders = int(getattr(fixed, 'senders', 0))
+            if senders > 0:
+                exclude: Set[int] = set()
+                if receiver_host == 'local' and fixed.worker_cpus:
+                    try:
+                        exclude = {int(x) for x in str(fixed.worker_cpus).split(',') if x}
+                    except Exception:
+                        exclude = set()
+                scpu = choose_cpus(senders, exclude=exclude)
+                if scpu:
+                    fixed.sender_cpus = ",".join(str(c) for c in scpu)
 
 class Runner:
     def __init__(self,
@@ -185,7 +108,7 @@ class Runner:
                  receiver_app_dir: Optional[Path] = None,
                  client_app_dir: Optional[Path] = None,
                  impl_extra_args: Optional[Dict[str, List[str]]] = None,
-                 auto_pin_workers: bool = True,
+                 auto_cpu_ids: bool = False,
                  client_extra_args: Optional[List[str]] = None):
         self.app_dir = app_dir
         self.receiver_host = receiver_host
@@ -193,118 +116,30 @@ class Runner:
         self.receiver_app_dir = receiver_app_dir or app_dir
         self.client_app_dir = client_app_dir or app_dir
         self.impl_extra_args = impl_extra_args or {}
-        self.auto_pin_workers = auto_pin_workers
+        # controls all automatic affinity selection (workers, senders, pingpong)
+        self.auto_cpu_ids = auto_cpu_ids
         self.client_extra_args = client_extra_args or []
-
-    def _preset_sender_cpus(self, fixed: FixedParams) -> List[int]:
-        """Compute sender CPU list, avoiding overlap with receiver when both local."""
-        senders = int(getattr(fixed, 'senders', 0))
-        if senders <= 0:
-            return []
-        if self.client_host == "local" and self.receiver_host == "local":
-            workers = int(getattr(fixed, 'workers', 0))
-            recv = choose_worker_cpus(workers) if (self.auto_pin_workers and workers > 0) else []
-            return choose_cpus(senders, exclude=set(recv))
-        return choose_cpus(senders)
 
     def ensure_binaries(self, impls: Sequence[str]):
         if self.receiver_host == "local":
-            missing = []
-            for i in impls:
-                path = self.receiver_app_dir / IMPL_BIN_NAME[i]
-                if not path.exists():
-                    missing.append(str(path))
-            if missing:
-                raise FileNotFoundError(f"Missing local receiver binaries: {missing}. Set --app-root correctly.")
+            rc_ensure_binaries(self.receiver_app_dir, impls)
         if self.client_host == "local":
             cpath = self.client_app_dir / CLIENT_BIN_NAME
             if not cpath.exists():
                 raise FileNotFoundError(f"Missing local client binary: {cpath}. Set --app-root correctly.")
 
-    def _start_receiver(self, impl: str, fixed: FixedParams, results_dir: Path,
-                        extra_tags: Dict[str, str], extra_impl_args: List[str],
-                        preset_worker_cpus: Optional[List[int]] = None) -> subprocess.Popen:
-        bin_name = IMPL_BIN_NAME[impl]
-        args = [
-            "--address", fixed.address,
-            "--buffer-size", str(fixed.buffer_size),
-            "--workers", str(fixed.workers),
-            "--results-dir", str(results_dir),
-            "--metric-hud-interval-secs", str(fixed.metric_hud_interval_secs),
-            "--collect-latency-every-n-samples", str(fixed.collect_latency_every_n_samples),
-            "--shutdown-on-disconnect",
-        ]
-        if fixed.busy_spin:
-            args += ["--busy-spin", "true"]
-        if fixed.recv_so_rcvbuf > 0:
-            args += ["--so-rcvbuf", str(fixed.recv_so_rcvbuf)]
-        if fixed.send_so_sndbuf > 0:
-            args += ["--so-sndbuf", str(fixed.send_so_sndbuf)]
-        if fixed.echo != "none":
-            args += ["--echo", fixed.echo]
-
-        if impl == "bsd":
-            if fixed.bsd_read_limit > 0:
-                args += ["--read-limit", str(fixed.bsd_read_limit)]        
-        elif impl == "uring":
-            if fixed.uring_buffer_count > 0:
-                args += ["--buffer-count", str(fixed.uring_buffer_count)]
-            if fixed.uring_per_conn_buffer_pool:
-                args += ["--per-connection-buffer-pool", "true"] 
-
-        # Auto CPU pinning: compute a comma-separated CPU list for workers, unless user provided one
-        user_specified_worker_cpus = _has_flag_or_kv(extra_impl_args, "--worker-cpus")
-        if self.auto_pin_workers and fixed.workers > 0 and not user_specified_worker_cpus:
-            cpus = list(preset_worker_cpus or choose_worker_cpus(int(fixed.workers)))
-            if cpus:
-                args += ["--worker-cpus", ",".join(str(c) for c in cpus)]
-        for k, v in extra_tags.items():
-            args += ["--tag", f"{k}={v}"]
-        args += list(extra_impl_args or [])
-
-        log = (results_dir / f"receiver_{impl}.log").open("w")
+    def ensure_pingpong_binaries(self, impls: Sequence[str]):
         if self.receiver_host == "local":
-            full_cmd = [str(self.receiver_app_dir / bin_name)] + args
-            (results_dir / "receiver_cmd.log").write_text(" ".join(shlex.quote(c) for c in full_cmd))
-            return subprocess.Popen(full_cmd, stdout=log, stderr=subprocess.STDOUT, cwd=str(self.receiver_app_dir))
-        else:
-            remote_cmd = f"cd {shlex.quote(str(self.receiver_app_dir))} && ./" + shlex.quote(bin_name)
-            remote_cmd += " " + " ".join(shlex.quote(a) for a in args)
-            full_cmd = ["ssh", self.receiver_host, remote_cmd]
-            (results_dir / "receiver_cmd.log").write_text(" ".join(shlex.quote(c) for c in full_cmd))
-            return subprocess.Popen(full_cmd, stdout=log, stderr=subprocess.STDOUT)
+            pp_ensure_binaries(self.receiver_app_dir, impls)
+
+    def _start_receiver(self, impl: str, fixed: FixedParams, results_dir: Path,
+                        extra_tags: Dict[str, str], extra_impl_args: List[str]) -> subprocess.Popen:
+        return rc_start_receiver(self.receiver_host, self.receiver_app_dir, impl, fixed, results_dir,
+                                 extra_tags, extra_impl_args)
 
     def _run_client(self, fixed: FixedParams, duration_sec: int, results_dir: Path) -> int:
-        args = [
-            "--address", fixed.address,
-            "--senders", str(getattr(fixed, 'senders', 0)),
-            "--conns-per-sender", str(getattr(fixed, 'conns_per_sender', 1)),
-            "--msg-size", str(getattr(fixed, 'msg_size', 0)),
-            "--msgs-per-sec", str(getattr(fixed, 'msgs_per_sec', 0)),
-            "--stop-after-n-secs", str(duration_sec),
-            "--max-batch-size", str(getattr(fixed, 'max_batch_size', 0)),
-            "--metric-hud-interval-secs", str(getattr(fixed, 'metric_hud_interval_secs', 0)),
-        ]
-        if fixed.drain:
-            args += ["--drain"]
-        if fixed.nodelay:
-            args += ["--nodelay"]
-        # Auto-inject sender CPUs unless user provided their own in client args
-        if not _has_flag_or_kv(self.client_extra_args, "--sender-cpus"):
-            scpus = self._preset_sender_cpus(fixed)
-            if scpus:
-                args += ["--sender-cpus", ",".join(str(c) for c in scpus)]
-        log = (results_dir / "client.log").open("w")
-        if self.client_host == "local":
-            full_cmd = [str(self.client_app_dir / CLIENT_BIN_NAME)] + args + list(self.client_extra_args)
-            (results_dir / "client_cmd.log").write_text(" ".join(shlex.quote(c) for c in full_cmd))
-            return subprocess.call(full_cmd, stdout=log, stderr=subprocess.STDOUT, cwd=str(self.client_app_dir))
-        else:
-            remote_cmd = f"cd {shlex.quote(str(self.client_app_dir))} && ./" + shlex.quote(CLIENT_BIN_NAME)
-            remote_cmd += " " + " ".join(shlex.quote(a) for a in (args + list(self.client_extra_args)))
-            full_cmd = ["ssh", self.client_host, remote_cmd]
-            (results_dir / "client_cmd.log").write_text(" ".join(shlex.quote(c) for c in full_cmd))
-            return subprocess.call(full_cmd, stdout=log, stderr=subprocess.STDOUT)
+        return rc_run_client(self.client_host, self.client_app_dir, fixed, duration_sec, results_dir,
+                             self.client_extra_args)
 
     def _stop_receiver(self, proc: subprocess.Popen, timeout: float = 15.0):
         """
@@ -312,17 +147,22 @@ class Runner:
         The receiver is expected to shut down on its own when the client disconnects.
         If it doesn't exit within the timeout, it will be forcibly killed.
         """
-        if proc.poll() is not None:
-            return
-        try:
-            proc.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            raise RuntimeError(
-                f"Receiver process {proc.pid} did not exit gracefully within {timeout}s and was forcibly killed.")
+        return rc_stop_receiver(proc, timeout=timeout)
+
+    # --- Pingpong helpers ---
+    def _start_pingpong_acceptor(self, impl: str, fixed: FixedParams, results_dir: Path,
+                                 extra_impl_args: Optional[List[str]] = None) -> subprocess.Popen:
+        return pp_start_acceptor(self.receiver_host, self.receiver_app_dir, impl, fixed, results_dir, extra_impl_args)
+
+    def _run_pingpong_initiator(self, impl: str, fixed: FixedParams, results_dir: Path,
+                                tags: Dict[str, str], extra_impl_args: Optional[List[str]] = None) -> int:
+        return pp_run_initiator(self.client_host, self.client_app_dir, impl, fixed, results_dir, tags, extra_impl_args)
 
     def run_scenario(self, sc: Scenario, out_root: Path, cli_args: Optional[argparse.Namespace] = None) -> Path:
-        self.ensure_binaries(sc.implementations)
+        if getattr(sc, 'mode', 'receiver') == 'pingpong':
+            self.ensure_pingpong_binaries(sc.implementations)
+        else:
+            self.ensure_binaries(sc.implementations)
         run_id = ts_utc_compact()
         sc_dir = out_root / f"{sc.name}_{run_id}"
         sc_dir.mkdir(parents=True, exist_ok=True)
@@ -376,33 +216,30 @@ class Runner:
                 tags = {"scenario": sc.name, "impl": impl, sc.var_key: str(val)}
                 extra_impl = list(sc.impl_extra.get(impl, [])) + list(self.impl_extra_args.get(impl, []))
 
-                rproc = self._start_receiver(impl, fixed, run_dir, tags, extra_impl)
-                time.sleep(1)
-                rc = self._run_client(fixed, sc.fixed.duration_sec, run_dir)
-                if rc != 0:
-                    print(f"Client exited with {rc} for {impl} {sc.var_key}={val}", file=sys.stderr)
-                self._stop_receiver(rproc)
+                if getattr(sc, 'mode', 'receiver') == 'pingpong':
+                    # Start acceptor then run initiator which writes results into run_dir
+                    if self.auto_cpu_ids:
+                        assign_auto_cpus_ids(fixed, self.receiver_host, self.client_host, 'pingpong')
+
+                    aproc = self._start_pingpong_acceptor(impl, fixed, run_dir, extra_impl_args=extra_impl)
+                    time.sleep(3)
+                    rc = self._run_pingpong_initiator(impl, fixed, run_dir, tags, extra_impl_args=extra_impl)
+                    if rc != 0:
+                        print(f"Pingpong initiator exited with {rc} for {impl} {sc.var_key}={val}", file=sys.stderr)
+                    self._stop_receiver(aproc)
+                else:
+                    if self.auto_cpu_ids:
+                        assign_auto_cpus_ids(fixed, self.receiver_host, self.client_host, 'receiver')
+
+                    rproc = self._start_receiver(impl, fixed, run_dir, tags, extra_impl)
+                    time.sleep(3)
+                    rc = self._run_client(fixed, sc.fixed.duration_sec, run_dir)
+                    if rc != 0:
+                        print(f"Client exited with {rc} for {impl} {sc.var_key}={val}", file=sys.stderr)
+                    self._stop_receiver(rproc)
 
         print(f"Scenario '{sc.name}' finished: {sc_dir}")
         return sc_dir
-
-
-def _run_plot(results_root: Path, scenario_name: str, relative_to: str,
-              impls: Optional[List[str]] = None, run_dir: Optional[Path] = None) -> int:
-    plot_script = REPO_ROOT / "benchmark" / "plot_results.py"
-    cmd = [
-        sys.executable, str(plot_script),
-        "--results-dir", str(results_root),
-        "--scenario", scenario_name,
-        "--relative-to", relative_to,
-    ]
-    if impls:
-        for impl in impls:
-            cmd += ["--impl", impl]
-    if run_dir is not None:
-        cmd += ["--run-dir", str(run_dir)]
-    print(f"Auto-plot: {' '.join(shlex.quote(c) for c in cmd)}")
-    return subprocess.call(cmd)
 
 
 def run_from_args(args, scenarios: List[Scenario]) -> int:
@@ -422,7 +259,7 @@ def run_from_args(args, scenarios: List[Scenario]) -> int:
             continue
         impl, tok = item.split("=", 1)
         impl = impl.strip()
-        if impl not in IMPL_BIN_NAME:
+        if impl not in RECEIVER_BIN_NAME:
             print(f"Unknown impl in --impl-arg: {impl}", file=sys.stderr)
             continue
         impl_extra_args.setdefault(impl, []).append(tok)
@@ -434,80 +271,13 @@ def run_from_args(args, scenarios: List[Scenario]) -> int:
         receiver_app_dir=args.receiver_app_root,
         client_app_dir=args.client_app_root,
         impl_extra_args=impl_extra_args,
+        auto_cpu_ids=getattr(args, 'auto_cpu_ids', False),
     )
 
     args.out.mkdir(parents=True, exist_ok=True)
 
-    # FixedParams overrides helpers
-    def _parse_bool(s: str) -> bool:
-        sl = s.strip().lower()
-        if sl in ("1", "true", "yes", "y", "on"): return True
-        if sl in ("0", "false", "no", "n", "off"): return False
-        raise ValueError(f"Invalid boolean value: {s}")
-
-    fixed_types = get_type_hints(FixedParams)
-
-    def _coerce_value(key: str, value: str):
-        t = fixed_types.get(key)
-        if t is None:
-            return value
-        if t is bool:
-            return _parse_bool(value)
-        if t is int:
-            return int(value)
-        if t is str:
-            return value
-        try:
-            return int(value)
-        except Exception:
-            try:
-                return _parse_bool(value)
-            except Exception:
-                return value
-
-    # Global overrides key=value
-    global_overrides: Dict[str, str] = {}
-    for item in getattr(args, 'fixed_params', []) or []:
-        if "=" not in item:
-            print(f"Ignoring --fixed-params without '=': {item}", file=sys.stderr)
-            continue
-        k, v = item.split("=", 1)
-        global_overrides[k.strip()] = v.strip()
-
-    # Per-scenario overrides scenario:key=value
-    scenario_overrides: Dict[str, Dict[str, str]] = {}
-    for item in getattr(args, 'scenario_fixed', []) or []:
-        if ":" not in item or "=" not in item:
-            print(f"Ignoring --scenario-fixed (need scenario:key=value): {item}", file=sys.stderr)
-            continue
-        scen_part, kv = item.split(":", 1)
-        if "=" not in kv:
-            print(f"Ignoring --scenario-fixed (missing '='): {item}", file=sys.stderr)
-            continue
-        k, v = kv.split("=", 1)
-        scenario_overrides.setdefault(scen_part.strip(), {})[k.strip()] = v.strip()
-
-    # Apply to scenarios
-    for sc in scs:
-        # Global
-        for k, v in global_overrides.items():
-            if not hasattr(sc.fixed, k):
-                print(f"Warning: FixedParams has no field '{k}', ignoring --fixed-params {k}", file=sys.stderr)
-                continue
-            try:
-                setattr(sc.fixed, k, _coerce_value(k, v))
-            except Exception as e:
-                print(f"Warning: failed to apply --fixed-params {k}={v}: {e}", file=sys.stderr)
-        # Scenario-specific
-        per = scenario_overrides.get(sc.name, {})
-        for k, v in per.items():
-            if not hasattr(sc.fixed, k):
-                print(f"Warning: FixedParams has no field '{k}', ignoring --scenario-fixed for {sc.name}", file=sys.stderr)
-                continue
-            try:
-                setattr(sc.fixed, k, _coerce_value(k, v))
-            except Exception as e:
-                print(f"Warning: failed to apply --scenario-fixed {sc.name}:{k}={v}: {e}", file=sys.stderr)
+    # Apply FixedParams overrides
+    apply_fixedparams_overrides(scs, getattr(args, 'fixed_params', None), getattr(args, 'scenario_fixed', None))
 
     # Parse helper for var_values specs
     def _parse_int_list_spec(spec: str) -> List[int]:
@@ -538,23 +308,8 @@ def run_from_args(args, scenarios: List[Scenario]) -> int:
             return [int(s)]
         raise ValueError(f"Invalid var-values spec: {spec}")
 
-    for item in getattr(args, 'scenario_var_values', []) or []:
-        if ":" not in item:
-            print(f"Ignoring --scenario-var-values (need scenario:spec): {item}", file=sys.stderr)
-            continue
-        scen, spec = item.split(":", 1)
-        try:
-            vals = _parse_int_list_spec(spec)
-        except Exception as e:
-            print(f"Warning: failed to parse --scenario-var-values for {scen}: {e}", file=sys.stderr)
-            continue
-        matched = False
-        for sc in scs:
-            if sc.name == scen:
-                sc.var_values = list(vals)
-                matched = True
-        if not matched:
-            print(f"Warning: scenario '{scen}' not found for --scenario-var-values", file=sys.stderr)
+    # Apply var_values overrides
+    apply_scenario_var_values(scs, getattr(args, 'scenario_var_values', []))
 
     if getattr(args, 'dry_run', False):
         print("Planned runs:")

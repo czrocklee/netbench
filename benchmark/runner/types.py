@@ -15,6 +15,19 @@ class FixedParams:
     conns: int = 0 
     drain: bool = False
     nodelay: bool = False
+    # Client senders: comma-separated list mapping to sender indices
+    sender_cpus: Optional[str] = None
+    
+    # pingpong specific controls
+    warmup_count: int = 10000
+    max_samples: int = 0
+    # Pingpong CPUs: per-process CPU id; used for both uring/asio/bsd
+    pp_acceptor_cpu: Optional[int] = None
+    pp_initiator_cpu: Optional[int] = None
+    # Optional sqpoll CPUs for io_uring (applies if impl == 'uring')
+    pp_acceptor_sqpoll_cpu: Optional[int] = None
+    pp_initiator_sqpoll_cpu: Optional[int] = None
+
     # receivers:
     workers: int = 1
     busy_spin: bool = False
@@ -25,6 +38,8 @@ class FixedParams:
     max_batch_size: int = 1024
     collect_latency_every_n_samples: int = 0
     metric_hud_interval_secs: int = 0
+    # Receiver workers: comma-separated list mapping to worker indices
+    worker_cpus: Optional[str] = None
     bsd_read_limit: int = 0
     uring_buffer_count: int = 0
     uring_per_conn_buffer_pool: bool = False
@@ -38,7 +53,6 @@ Signature (only):
 """
 LinkFunc = Callable[["FixedParams"], Any]
 
-
 @dc.dataclass
 class Scenario:
     name: str
@@ -48,6 +62,8 @@ class Scenario:
     var_key: str = "workers"
     var_values: Sequence[int] = ()
     implementations: Sequence[str] = ()
+    # mode: 'receiver' (default) runs receiver+client; 'pingpong' runs pingpong acceptor+initiator
+    mode: str = "receiver"
     # Optional: per-impl extra args for receiver, e.g., {"uring": ["--zerocopy","true"]}
     impl_extra: Dict[str, List[str]] = dc.field(default_factory=dict)
     # Optional: linkages to derive fields from the varying variable.

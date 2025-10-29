@@ -5,8 +5,8 @@
 
 namespace uring
 {
-  sender::sender(io_context& io_ctx, registered_buffer_pool& buf_pool, std::size_t max_buf_size)
-    : io_ctx_{io_ctx}, buf_pool_{buf_pool}, write_list_{max_buf_size / buf_pool.get_buffer_size()}
+  sender::sender(io_context& io_ctx, std::size_t max_buf_size)
+    : io_ctx_{io_ctx}, buf_pool_{io_ctx.get_buffer_pool()}, write_list_{max_buf_size / buf_pool_.get_buffer_size()}
   {
     if (write_list_.capacity() == 0)
     {
@@ -16,7 +16,7 @@ namespace uring
     LOG_INFO(
       "sender initialized: max_buf_size={}, buffer_size={}, max_buffer_count={}",
       max_buf_size,
-      buf_pool.get_buffer_size(),
+      buf_pool_.get_buffer_size(),
       write_list_.capacity());
   }
 
@@ -34,7 +34,7 @@ namespace uring
 
   void sender::send(void const* data, std::size_t size)
   {
-    send(size, [&](void* buf, std::size_t) {
+    send(size, [&](void* buf, std::size_t sz) {
       std::memcpy(buf, data, size);
       return size;
     });

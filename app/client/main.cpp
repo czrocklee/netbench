@@ -58,9 +58,8 @@ int main(int argc, char** argv)
       "-M,--metric-hud-interval-secs", metric_hud_interval_secs, "Metric HUD interval in seconds, 0 for disabled")
     ->default_val(5);
 
-  // Optional CPU pinning for sender threads (comma-separated list)
   std::vector<int> sender_cpus; // size <= senders; others unpinned
-  app.add_option("--sender-cpus", sender_cpus, "Comma-separated CPU IDs for each sender (optional)")->delimiter(',');
+  app.add_option("--sender-cpu-ids", sender_cpus, "Comma-separated CPU IDs for each sender (optional)")->delimiter(',');
 
   CLI11_PARSE(app, argc, argv);
 

@@ -11,7 +11,8 @@ namespace uring
 {
   receiver::receiver(io_context& io_ctx, buffer_pool_type buffer_pool)
     : io_ctx_{io_ctx}, buffer_pool_{std::move(buffer_pool)}
-  {}
+  {
+  }
 
   void receiver::open(socket sock)
   {
@@ -53,13 +54,13 @@ namespace uring
     }
 
     std::size_t bytes_received = static_cast<std::size_t>(cqe.res);
-    auto buf_id = provided_buffer_pool::buffer_id_type{
-      static_cast<std::uint16_t>(cqe.flags >> IORING_CQE_BUFFER_SHIFT)};
-  std::byte* buffer = buffer_pool_.get().get_buffer_address(buf_id);
+    auto buf_id =
+      provided_buffer_pool::buffer_id_type{static_cast<std::uint16_t>(cqe.flags >> IORING_CQE_BUFFER_SHIFT)};
+    std::byte* buffer = buffer_pool_.get().get_buffer_address(buf_id);
 
     data_cb_({}, ::asio::const_buffer{buffer, bytes_received});
 
-  buffer_pool_.get().push_buffer(buf_id);
+    buffer_pool_.get().push_buffer(buf_id);
 
     if (!(cqe.flags & IORING_CQE_F_MORE))
     {

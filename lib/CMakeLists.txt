@@ -31,6 +31,7 @@ target_link_libraries(uring_lib PUBLIC bsd_lib uring)
 set(RASIO_SOURCES
     rasio/connector.cpp 
     rasio/acceptor.cpp
+    rasio/receiver.cpp
 )
 
 

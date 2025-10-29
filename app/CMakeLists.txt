@@ -81,8 +81,12 @@ target_compile_definitions(uring_pingpong PRIVATE IO_URING_API)
 target_link_libraries(uring_pingpong PRIVATE common_lib uring_lib utility_lib CLI11::CLI11)
 
 add_executable(asio_pingpong ${PINGPONG_SOURCES})
-target_compile_definitions(asio_pingpong PRIVATE ASIO_API ASIO_STANDALONE ASIO_NO_DEPRECATED)
+target_compile_definitions(asio_pingpong PRIVATE ASIO_API)
 target_link_libraries(asio_pingpong PRIVATE common_lib rasio_lib utility_lib CLI11::CLI11)
+
+add_executable(asio_uring_pingpong ${PINGPONG_SOURCES})
+target_compile_definitions(asio_uring_pingpong PRIVATE ASIO_API)
+target_link_libraries(asio_uring_pingpong PRIVATE common_lib rasio_uring_lib utility_lib CLI11::CLI11)
 
 add_executable(bsd_pingpong ${PINGPONG_SOURCES})
 target_compile_definitions(bsd_pingpong PRIVATE BSD_API)

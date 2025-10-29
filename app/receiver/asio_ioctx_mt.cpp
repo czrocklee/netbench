@@ -199,9 +199,9 @@ int main(int argc, char** argv)
           {
             iter->metrics.end_ts = std::chrono::steady_clock::now();
 
-            if (shutdown_on_disconnect)
+            if (std::lock_guard<std::mutex> lg{conns_lock}; shutdown_on_disconnect && conns.empty())
             {
-              shutdown_counter = -1;
+              shutdown_counter = 0;
             }
           }
 

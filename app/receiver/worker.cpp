@@ -131,7 +131,7 @@ void worker::add_connection(net::socket sock)
         f |= net::sender::flags::zerocopy;
       }
 
-      iter->sender.emplace(io_ctx_, io_ctx_.get_buffer_pool(), 1024 * 1024 * 128);
+      iter->sender.emplace(io_ctx_, 1024 * 1024 * 128);
       iter->sender->open(iter->receiver.get_socket(), f);
 #else
       iter->sender.emplace(io_ctx_);
