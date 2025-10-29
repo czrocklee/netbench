@@ -54,31 +54,22 @@ def get_default_ip_address() -> str:
 def default_scenarios() -> List[Scenario]:
     fixed = FixedParams(
         address=f"{get_default_ip_address()}:19004",
-        duration_sec=15,
+        duration_sec=30,
         msg_size=32,
         senders=1,
-        conns_per_sender=1,
+        conns=1,
         busy_spin=False,
         echo="none",
         drain=False,
         buffer_size=32,
-        max_batch_size=1024,
+        max_send_batch_size=1024,
         metric_hud_interval_secs=0,
         collect_latency_every_n_samples=0,
     )
     scs: List[Scenario] = [
         Scenario(
-            name="receive_throughput_by_threads",
-            title="Receive Throughput by Threads",
-            fixed=fixed,
-            var_key="workers",
-            var_values=[1, 2, 4, 8],
-            linkages={"senders": lambda params: int(params.workers)},
-            implementations=["bsd", "uring", "asio", "asio_uring"],
-        ),
-        Scenario(
             name="receive_throughput_by_buffer_size",
-            title="Receive Throughput by Buffer Size",
+            title="Receive Throughput vs Buffer Size",
             fixed=fixed,
             var_key="buffer_size",
             var_values=[32, 128, 256, 512],
@@ -86,21 +77,39 @@ def default_scenarios() -> List[Scenario]:
         ),
         Scenario(
             name="echo_throughput_by_buffer_size",
-            title="Echo (per_op) Throughput by Buffer Size",
+            title="Echo (per_op) Throughput vs Buffer Size",
             fixed=dc.replace(fixed, echo="per_op", drain=True),
             var_key="buffer_size",
             var_values=[32, 128, 256, 512],
             implementations=["bsd", "uring", "asio", "asio_uring"],
         ),
         Scenario(
+            name="receive_throughput_by_connections",
+            title="Receive Throughput vs connections",
+            fixed=dc.replace(fixed, buffer_size=512, bsd_read_limit = 32 * 1024),
+            var_key="conns",
+            var_values=[1, 4, 16, 256],
+            linkages={"uring_buffer_count": lambda params: int(params.conns * 128)},
+            implementations=["bsd", "uring", "asio", "asio_uring"],
+        ),
+        Scenario(
+            name="receive_throughput_by_threads",
+            title="Receive Throughput vs Threads",
+            fixed=fixed,
+            var_key="workers",
+            var_values=[1, 2, 4, 8],
+            linkages={"senders": lambda params: int(params.workers)},
+            implementations=["bsd", "uring", "asio", "asio_uring"],
+        ),
+        Scenario(
             name="receive_latency_by_message_rate",
-            title="Receive Latency by Message Rate",
+            title="Receive Latency vs Message Rate",
             fixed=dc.replace(fixed, nodelay=True),
             var_key="msgs_per_sec",
-            var_values=[1000, 10000, 100000, 1000000],
+            var_values=[1000, 10_000, 100_000, 1000_000],
             linkages={
                 "collect_latency_every_n_samples": lambda params: max(
-                    int(params.msgs_per_sec) // 100_000, 1
+                    int(params.msgs_per_sec) // 10_000, 1
                 )
             },
             implementations=["bsd", "uring", "asio", "asio_uring"],

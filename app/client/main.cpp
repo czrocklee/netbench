@@ -22,7 +22,8 @@ int main(int argc, char** argv)
   std::string bind_address;
   app.add_option("-b,--bind-address", bind_address, "Bind address")->default_val("");
 
-  app.add_option("-c,--conns-per-sender", cfg.conns, "Number of connections per sender")->default_val(1);
+  int conns;
+  app.add_option("-c,--conns", conns, "Number of connections in total")->default_val(1);
 
   int senders = 1;
   app.add_option("-s,--senders", senders, "Number of senders")->default_val(1);
@@ -64,6 +65,14 @@ int main(int argc, char** argv)
   CLI11_PARSE(app, argc, argv);
 
   cfg.msgs_per_sec = msgs_per_sec > 0 ? (msgs_per_sec / senders) : 0;
+  cfg.conns = conns / senders;
+
+  if (cfg.conns == 0 || (cfg.conns * senders != conns))
+  {
+    std::cerr << "Total connections must be at least equal to number of senders and divisible by it."
+              << std::endl;
+    return 1;
+  }
 
   std::cout << "Target address: " << address << std::endl;
   std::cout << "Bind address: " << (bind_address.empty() ? "not set" : bind_address) << std::endl;

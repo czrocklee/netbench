@@ -11,10 +11,11 @@ class FixedParams:
     msg_size: int = 32
     senders: int = 1
     msgs_per_sec: int = 0  # 0 = as fast as possible
-    conns_per_sender: int = 1
+    conns: int = 1
     conns: int = 0 
     drain: bool = False
     nodelay: bool = False
+    max_send_batch_size: int = 0 # use default
     # Client senders: comma-separated list mapping to sender indices
     sender_cpus: Optional[str] = None
     
@@ -35,7 +36,6 @@ class FixedParams:
     buffer_size: int = 32
     recv_so_rcvbuf: int = 0
     send_so_sndbuf: int = 0
-    max_batch_size: int = 1024
     collect_latency_every_n_samples: int = 0
     metric_hud_interval_secs: int = 0
     # Receiver workers: comma-separated list mapping to worker indices

@@ -76,13 +76,13 @@ def run_client(client_host: str, client_app_dir: Path, fixed: FixedParams, durat
                client_extra_args: List[str]) -> int:
     args: List[str] = [
         "--address", fixed.address,
-        "--senders", str(getattr(fixed, 'senders', 0)),
-        "--conns-per-sender", str(getattr(fixed, 'conns_per_sender', 1)),
-        "--msg-size", str(getattr(fixed, 'msg_size', 0)),
-        "--msgs-per-sec", str(getattr(fixed, 'msgs_per_sec', 0)),
+        "--senders", str(fixed.senders),
+        "--conns", str(fixed.conns),
+        "--msg-size", str(fixed.msg_size),
+        "--msgs-per-sec", str(fixed.msgs_per_sec),
         "--stop-after-n-secs", str(duration_sec),
-        "--max-batch-size", str(getattr(fixed, 'max_batch_size', 0)),
-        "--metric-hud-interval-secs", str(getattr(fixed, 'metric_hud_interval_secs', 0)),
+        "--max-batch-size", str(fixed.max_send_batch_size),
+        "--metric-hud-interval-secs", str(fixed.metric_hud_interval_secs),
     ]
     if fixed.drain:
         args += ["--drain"]
@@ -91,7 +91,7 @@ def run_client(client_host: str, client_app_dir: Path, fixed: FixedParams, durat
     # Sender CPUs: use FixedParams only
     if fixed.sender_cpus:
         args += ["--sender-cpu-ids", str(fixed.sender_cpus)]
-    log = (results_dir / f"{CLIENT_BIN_NAME}.log").open("w")
+    log = (results_dir / f"{CLIENT_BIN_NAME}.stdout").open("w")
     cmd = (results_dir / f"{CLIENT_BIN_NAME}.cmd")
     if client_host == "local":
         full_cmd = [str(client_app_dir / CLIENT_BIN_NAME)] + args + list(client_extra_args or [])
