@@ -16,6 +16,7 @@ CLIENT_BIN_NAME = "client"
 PINGPONG_BIN_NAME = {
     "bsd": "bsd_pingpong",
     "uring": "uring_pingpong",
+    "uring_sqpoll": "uring_pingpong",
     "asio": "asio_pingpong",
     "asio_uring": "asio_uring_pingpong",
 }

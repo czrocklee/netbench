@@ -129,7 +129,7 @@ def default_scenarios() -> List[Scenario]:
             fixed=pp_fixed,
             var_key="msgs_per_sec",
             var_values=[0, 1000, 10000, 100000],
-            implementations=["bsd", "uring", "asio", "asio_uring"],
+            implementations=["bsd", "uring", "uring_sqpoll", "asio", "asio_uring"],
             mode="pingpong",
         ),
         Scenario(
@@ -139,7 +139,7 @@ def default_scenarios() -> List[Scenario]:
             var_key="msg_size",
             var_values=[32, 128, 512, 2048],
             linkages={"buffer_size": lambda params: int(params.msg_size)},
-            implementations=["bsd", "uring", "asio", "asio_uring"],
+            implementations=["bsd", "uring", "uring_sqpoll", "asio", "asio_uring"],
             mode="pingpong",
         ),
     ]

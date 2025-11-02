@@ -21,12 +21,16 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 
-COLOR_MAP = {
-    "bsd": "#377eb8",     # blue
-    "uring": "#e41a1c",   # red
-    "asio": "#ff7f00",    # orange
-    "asio_uring": "#984ea3",
-}
+# Tableau 10 Palette. A vibrant, high-contrast, and widely-used professional color scheme.
+COLOR_LIST = [
+    "#1f77b4",  # blue
+    "#ff7f0e",  # orange
+    "#2ca02c",  # green
+    "#d62728",  # red
+    "#9467bd",  # purple
+    "#8c564b",  # brown
+]
+
 
 METRIC_PROPERTIES = {
     "msgs_per_sec": {"label": "Messages per Second", "unit_family": "count"},
@@ -423,15 +427,20 @@ def _aggregate_percentiles_merged(var_dir: Path, requested: List[float]) -> Opti
 
 
 def plot_latency_percentiles(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_order: Dict[str, List[int]],
-                             scenario_subtitles: Dict[str, str], scenario_titles: Dict[str, str], impl_order: List[str],
+                             scenario_subtitles: Dict[str, str], scenario_titles: Dict[str, str],
+                             scenario_impl_orders: Dict[str, List[str]],
                              run_dir_paths: Dict[str, Path], percentiles: Optional[List[float]] = None,
                              debug_layout: bool = False, hide_title: bool = False) -> List[Path]:
     import matplotlib.pyplot as plt
     if percentiles is None:
-        percentiles = [50.0, 90.0, 99.0, 99.9, 99.9]
+        percentiles = [50.0, 90.0, 99.0, 99.9, 99.99]
     out_files: List[Path] = []
 
     for sc_name, vmap in scenarios.items():
+        # Use the specific implementation order for this scenario
+        impl_order = scenario_impl_orders.get(sc_name)
+        if not impl_order:
+            continue  # Skip if no impl order is defined for this scenario
         x_values = var_order.get(sc_name, sorted(vmap.keys()))
         var_key_name = _find_var_key(vmap) or "var"
         sc_dir = run_dir_paths[sc_name]
@@ -450,14 +459,14 @@ def plot_latency_percentiles(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]
             fig, ax = plt.subplots(figsize=(max(6, len(x_values) * 2.0), 4))
             centers = list(range(len(x_values)))
             plotted_any = False
-            for impl in impl_order:
+            for idx, impl in enumerate(impl_order):
                 y = []
                 for x in x_values:
                     agg = data.get(impl, {}).get(x)
                     y.append(agg.get(p) if agg and (p in agg) else float('nan'))
                 if all((not math.isfinite(v) for v in y)):
                     continue
-                ax.plot(centers, y, marker='o', linestyle='-', label=impl, color=COLOR_MAP.get(impl))
+                ax.plot(centers, y, marker='o', linestyle='-', label=impl, color=COLOR_LIST[idx % len(COLOR_LIST)])
                 plotted_any = True
 
             ax.set_xticks(centers)
@@ -500,7 +509,8 @@ def plot_latency_percentiles(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]
 
 
 def plot_matplotlib(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_order: Dict[str, List[int]],
-                    scenario_subtitles: Dict[str, str], scenario_titles: Dict[str, str], impl_order: List[str],
+                    scenario_subtitles: Dict[str, str], scenario_titles: Dict[str, str],
+                    scenario_impl_orders: Dict[str, List[str]],
                     metric_y1: str, metric_y2: Optional[str], y2_mode: str,
                     run_dir_paths: Dict[str, Path], baseline_impl: Optional[str] = None, debug_layout: bool = False,
                     hide_title: bool = False) -> List[Path]:
@@ -509,6 +519,10 @@ def plot_matplotlib(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_or
     # Per-run only: each run directory gets its own plot
 
     for sc_name, vmap in scenarios.items():
+        # Use the specific implementation order for this scenario
+        impl_order = scenario_impl_orders.get(sc_name)
+        if not impl_order:
+            continue # Skip if no impl order is defined for this scenario
         x_values = var_order.get(sc_name, sorted(vmap.keys()))
         n_groups = len(x_values)
         n_impls = len(impl_order)
@@ -530,7 +544,7 @@ def plot_matplotlib(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_or
             vals_y1: List[float] = []
             for x in x_values:
                 rp = vmap.get(x, {}).get(impl)
-                v = rp.get_metric(metric_y1) if rp else 0.0
+                v = rp.get_metric(metric_y1) if rp else float('nan')
                 vals_y1.append(v)
             raw_vals_by_impl[impl] = vals_y1
 
@@ -548,7 +562,7 @@ def plot_matplotlib(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_or
         # Plot bars for Y1 metric
         for idx, impl in enumerate(impl_order):
             raw_vals = raw_vals_by_impl.get(impl, [])
-            vals_scaled: List[float] = [(v / scale) if math.isfinite(v) else 0.0 for v in raw_vals]
+            vals_scaled: List[float] = [(v / scale) if math.isfinite(v) else float('nan') for v in raw_vals]
             texts: List[str] = []
             # If a baseline implementation is provided, compute percentage labels
             if baseline_impl:
@@ -560,7 +574,7 @@ def plot_matplotlib(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_or
                         texts.append("")
 
             positions = [p + idx * width for p in base_positions]
-            bars = ax1.bar(positions, vals_scaled, width=width, label=impl, edgecolor="#333333", color=COLOR_MAP.get(impl))
+            bars = ax1.bar(positions, vals_scaled, width=width, label=impl, edgecolor="#333333", color=COLOR_LIST[idx % len(COLOR_LIST)])
             if baseline_impl:
                 for rect, txt in zip(bars, texts):
                     if not txt:
@@ -610,13 +624,13 @@ def plot_matplotlib(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_or
 
             ax2 = ax1.twinx()
             if y2_mode == "line":
-                for impl in impl_order:
+                for idx, impl in enumerate(impl_order):
                     vals_y2: List[float] = []
                     for x in x_values:
                         rp = vmap.get(x, {}).get(impl)
                         v = rp.get_metric(metric_y2) if rp else float('nan')
                         vals_y2.append(v / y2_scale)
-                    ax2.plot(centers, vals_y2, marker='o', linestyle='--', label=f"{impl} ({metric_y2})", color=COLOR_MAP.get(impl))
+                    ax2.plot(centers, vals_y2, marker='o', linestyle='--', label=f"{impl} ({metric_y2})", color=COLOR_LIST[idx % len(COLOR_LIST)])
                 ax2.set_ylabel(y2_label)
                 ax2.ticklabel_format(style='plain', axis='y')
                 # Consolidate legends
@@ -772,10 +786,10 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     baseline_impl = None if (args.relative_to and args.relative_to.lower() == 'none') else args.relative_to
     metric_y2 = None if (args.metric_y2 and args.metric_y2.lower() == 'none') else args.metric_y2
-    files = plot_matplotlib(scenarios, var_order, scenario_subtitles, scenario_titles, impl_order, args.metric_y1, metric_y2, args.y2_mode,
+    files = plot_matplotlib(scenarios, var_order, scenario_subtitles, scenario_titles, scenario_impl_orders, args.metric_y1, metric_y2, args.y2_mode,
                             run_dir_paths, baseline_impl=baseline_impl, debug_layout=args.debug_layout, hide_title=args.no_title)
     # Also generate latency percentile plots if .hdr or percentile CSV files exist
-    lat_files = plot_latency_percentiles(scenarios, var_order, scenario_subtitles, scenario_titles, impl_order, run_dir_paths,
+    lat_files = plot_latency_percentiles(scenarios, var_order, scenario_subtitles, scenario_titles, scenario_impl_orders, run_dir_paths,
                                          percentiles=[50.0, 90.0, 99.0, 99.9, 99.99], debug_layout=args.debug_layout, hide_title=args.no_title)
     files.extend(lat_files)
     # Sort files by parent directory creation time in descending order

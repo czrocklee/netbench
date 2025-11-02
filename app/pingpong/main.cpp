@@ -72,6 +72,9 @@ int main(int argc, char** argv)
   app.add_option("-b,--buffer-count", cfg.buffer_count, "Number of buffers in pool prepared for each worker")
     ->default_val(2048);
 
+  bool enable_sqpoll = true;
+  app.add_flag("--sqpoll,!--no-sqpoll", enable_sqpoll, "Enable io_uring SQPOLL mode (default: on)");
+
   int sqpoll_cpu_affinity;
   app.add_option("-k,--sqpoll-cpu-id", sqpoll_cpu_affinity, "cpu affinity for the kernel polling thread")
     ->default_val(-1);
@@ -89,16 +92,19 @@ int main(int argc, char** argv)
 
 #ifdef IO_URING_API
     io_uring_params params{};
-    params.flags |= IORING_SETUP_SQPOLL;
     params.flags |= IORING_SETUP_SINGLE_ISSUER;
 
-    if (sqpoll_cpu_affinity >= 0)
+    if (enable_sqpoll)
     {
-      params.flags |= IORING_SETUP_SQ_AFF;
-      params.sq_thread_cpu = sqpoll_cpu_affinity;
+      params.flags |= IORING_SETUP_SQPOLL;
+      if (sqpoll_cpu_affinity >= 0)
+      {
+        params.flags |= IORING_SETUP_SQ_AFF;
+        params.sq_thread_cpu = sqpoll_cpu_affinity;
+      }
+      // 0 means wake immediately when idle timer expires; keep current behavior
+      params.sq_thread_idle = 0;
     }
-
-    params.sq_thread_idle = 0;
 
     cfg.params = params;
 #endif
