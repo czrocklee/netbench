@@ -1,7 +1,7 @@
 { pkgs ? import (builtins.fetchTarball {
     # Pinning to the NixOS 25.05 channel from GitHub.
-    url = "https://github.com/NixOS/nixpkgs/archive/d179d77c139e0a3f5c416477f7747e9d6b7ec315.tar.gz";
-    sha256 = "sha256:0kgsm80vwh1kbir1gwb7lmi5fmgjfvh3sjik1npm256d2bh0la39";
+    url = "https://github.com/NixOS/nixpkgs/archive/daf6dc47aa4b44791372d6139ab7b25269184d55.tar.gz";
+    sha256 = "sha256:0ddhdypgkg4cs5zy7y5wjl62y8nrfx7xh6b95l4rkbpnl2xzn5f3";
   }) {} }:
 
 let
@@ -49,12 +49,12 @@ let
 
   asio-lib = pkgs.stdenv.mkDerivation {
     pname = "asio";
-    version = "1.34.2"; # A specific version/tag from GitHub
+    version = "1.36.0"; # A specific version/tag from GitHub
     src = pkgs.fetchFromGitHub {
       owner = "chriskohlhoff";
       repo = "asio";
-      rev = "asio-1-34-2"; # The git tag or commit hash to use
-      sha256 = "sha256-B9tFXcmBn7n4wEdnfjw5o90fC/cG5+WMdu/K4T6Y+jI=";
+      rev = "asio-1-36-0"; # The git tag or commit hash to use
+      sha256 = "sha256-BhJpE5+t0WXsuQ5CtncU0P8Kf483uFoV+OGlFLc7TpQ=";
     };
     installPhase = ''
       runHook preInstall

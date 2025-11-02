@@ -22,10 +22,10 @@ from typing import Dict, List, Optional, Tuple
 
 
 COLOR_MAP = {
+    "bsd": "#377eb8",     # blue
     "uring": "#e41a1c",   # red
     "asio": "#ff7f00",    # orange
     "asio_uring": "#984ea3",
-    "bsd": "#377eb8",     # blue
 }
 
 METRIC_PROPERTIES = {
@@ -34,7 +34,7 @@ METRIC_PROPERTIES = {
     "ops_per_sec": {"label": "Ops per Second", "unit_family": "count"},
 }
 
-def get_scale_and_unit(metric_name: str, max_val: float) -> Tuple[float, str]:
+def _get_scale_and_unit(metric_name: str, max_val: float) -> Tuple[float, str]:
     family = METRIC_PROPERTIES.get(metric_name, {}).get("unit_family", "count")
     if family == "bytes":
         if max_val >= 1e9: return 1e9, 'GB/s'
@@ -46,6 +46,93 @@ def get_scale_and_unit(metric_name: str, max_val: float) -> Tuple[float, str]:
     if max_val >= 1e6: return 1e6, 'M/s'
     if max_val >= 1e3: return 1e3, 'K/s'
     return 1.0, 'count/s'
+
+
+def _adjust_legend_alpha(fig, ax) -> None:
+    """Heuristically lower legend opacity if it overlaps plotted data significantly.
+
+    - Collects bar rectangles and line bounding boxes in display coordinates.
+    - If legend bbox overlaps many targets, reduce frame alpha more aggressively.
+    """
+    leg = ax.get_legend()
+    if leg is None:
+        return
+    try:
+        renderer = fig.canvas.get_renderer()
+    except Exception:
+        try:
+            fig.canvas.draw()
+            renderer = fig.canvas.get_renderer()
+        except Exception:
+            return
+    try:
+        leg_bbox = leg.get_window_extent(renderer=renderer)
+    except Exception:
+        return
+
+    from matplotlib.transforms import Bbox  # type: ignore
+    target_bboxes: List[Bbox] = []
+
+    # Bar rectangles (matplotlib containers)
+    try:
+        for cont in getattr(ax, 'containers', []) or []:
+            for rect in getattr(cont, 'patches', []) or []:
+                try:
+                    bb = rect.get_window_extent(renderer=renderer)
+                    if bb is not None:
+                        target_bboxes.append(bb)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    # Line objects
+    try:
+        for line in getattr(ax, 'lines', []) or []:
+            try:
+                x = line.get_xdata(); y = line.get_ydata()
+                if len(x) and len(y):
+                    pts = ax.transData.transform(list(zip(x, y)))
+                    xs = [p[0] for p in pts]; ys = [p[1] for p in pts]
+                    bb = Bbox.from_extents(min(xs), min(ys), max(xs), max(ys))
+                    target_bboxes.append(bb)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    # Compute overlap count
+    overlap_area = 0.0
+    for bb in target_bboxes:
+        try:
+            # Calculate the area of intersection
+            intersection = Bbox.intersection(leg_bbox, bb)
+            if intersection is not None:
+                overlap_area += intersection.width * intersection.height
+        except Exception:
+            continue
+
+    # Decide alpha based on the ratio of overlapped area to the legend's total area.
+    # This is more robust than counting overlapped items.
+    leg_area = leg_bbox.width * leg_bbox.height
+    overlap_ratio = (overlap_area / leg_area) if leg_area > 0 else 0.0
+
+    if overlap_ratio > 0.5: alpha = 0.2
+    elif overlap_ratio > 0.2: alpha = 0.4
+    elif overlap_ratio > 0.01: alpha = 0.6
+    else: alpha = 0.8
+    try:
+        frame = leg.get_frame()
+        frame.set_facecolor('white')  # Ensure background is white before making it transparent
+        frame.set_alpha(alpha)  # This makes the legend background transparent
+
+        # Also make the legend handles (color patches) transparent
+        for handle in leg.get_patches():
+            handle.set_alpha(alpha)
+
+    except Exception:
+        # Fallback for older matplotlib or other issues
+        leg.set_alpha(alpha)
 
 @dataclass
 class RunPoint:
@@ -338,7 +425,7 @@ def _aggregate_percentiles_merged(var_dir: Path, requested: List[float]) -> Opti
 def plot_latency_percentiles(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_order: Dict[str, List[int]],
                              scenario_subtitles: Dict[str, str], scenario_titles: Dict[str, str], impl_order: List[str],
                              run_dir_paths: Dict[str, Path], percentiles: Optional[List[float]] = None,
-                             debug_layout: bool = False) -> List[Path]:
+                             debug_layout: bool = False, hide_title: bool = False) -> List[Path]:
     import matplotlib.pyplot as plt
     if percentiles is None:
         percentiles = [50.0, 90.0, 99.0, 99.9, 99.9]
@@ -378,8 +465,9 @@ def plot_latency_percentiles(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]
             ax.set_ylabel(f"Latency at p{p} (us)")
             subtitle = scenario_subtitles.get(sc_name)
             try:
-                main_title = scenario_titles.get(sc_name, sc_name)
-                fig.suptitle(main_title, fontsize=16, y=0.975)
+                if not hide_title:
+                    main_title = scenario_titles.get(sc_name, sc_name)
+                    fig.suptitle(main_title, fontsize=16, y=0.975)
                 if subtitle:
                     ax.text(1.0, 1.02, subtitle, transform=ax.transAxes,
                             ha='right', va='bottom', fontsize=10, color='#555')
@@ -390,9 +478,13 @@ def plot_latency_percentiles(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]
             ax.grid(axis='y', linestyle='--', alpha=0.3)
             if plotted_any:
                 ax.legend(loc='best')
+                _adjust_legend_alpha(fig, ax)
             
             try:
-                fig.tight_layout(rect=[0, 0, 1, 0.95] if subtitle else [0, 0, 1, 0.97])
+                if hide_title:
+                    fig.tight_layout(rect=[0, 0, 1, 0.98])
+                else:
+                    fig.tight_layout(rect=[0, 0, 1, 0.95] if subtitle else [0, 0, 1, 0.97])
             except Exception:
                 fig.tight_layout()
 
@@ -410,7 +502,8 @@ def plot_latency_percentiles(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]
 def plot_matplotlib(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_order: Dict[str, List[int]],
                     scenario_subtitles: Dict[str, str], scenario_titles: Dict[str, str], impl_order: List[str],
                     metric_y1: str, metric_y2: Optional[str], y2_mode: str,
-                    run_dir_paths: Dict[str, Path], baseline_impl: Optional[str] = None, debug_layout: bool = False) -> List[Path]:
+                    run_dir_paths: Dict[str, Path], baseline_impl: Optional[str] = None, debug_layout: bool = False,
+                    hide_title: bool = False) -> List[Path]:
     import matplotlib.pyplot as plt
     out_files: List[Path] = []
     # Per-run only: each run directory gets its own plot
@@ -447,7 +540,7 @@ def plot_matplotlib(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_or
             for v in vals:
                 if math.isfinite(v):
                     y_max = max(y_max, v)
-        scale, unit = get_scale_and_unit(metric_y1, y_max)
+        scale, unit = _get_scale_and_unit(metric_y1, y_max)
 
         fig, ax1 = plt.subplots(figsize=(max(6, n_groups * 2.0), 4))
         base_positions = list(range(n_groups))
@@ -512,7 +605,7 @@ def plot_matplotlib(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_or
                     if rp:
                         y2_max = max(y2_max, rp.get_metric(metric_y2))
 
-            y2_scale, y2_unit = get_scale_and_unit(metric_y2, y2_max)
+            y2_scale, y2_unit = _get_scale_and_unit(metric_y2, y2_max)
             y2_label = f"{y2_label_base} ({y2_unit})" if y2_unit else y2_label_base
 
             ax2 = ax1.twinx()
@@ -530,6 +623,7 @@ def plot_matplotlib(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_or
                 lines, labels = ax1.get_legend_handles_labels()
                 lines2, labels2 = ax2.get_legend_handles_labels()
                 ax1.legend(lines + lines2, labels + labels2, loc='best')
+                _adjust_legend_alpha(fig, ax1)
             else:  # share-bars mode
                 ax2.set_ylabel(y2_label)
                 ax2.ticklabel_format(style='plain', axis='y')
@@ -538,8 +632,10 @@ def plot_matplotlib(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_or
                 y2_lim_max = (y1_lim_max * scale) * (y2_max / y_max if y_max > 0 else 1.0)
                 ax2.set_ylim(0, y2_lim_max / y2_scale)
                 ax1.legend(loc='best')
+                _adjust_legend_alpha(fig, ax1)
         else:
             ax1.legend()
+            _adjust_legend_alpha(fig, ax1)
 
         ax1.grid(axis='y', linestyle='--', alpha=0.3)
 
@@ -548,8 +644,9 @@ def plot_matplotlib(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_or
         subtxt: Optional[object] = None
         # Larger main title centered; subtitle centered directly beneath, above the plot
         try:
-            main_title = scenario_titles.get(sc_name, sc_name)
-            supt = fig.suptitle(main_title, fontsize=16, y=0.975)
+            if not hide_title:
+                main_title = scenario_titles.get(sc_name, sc_name)
+                supt = fig.suptitle(main_title, fontsize=16, y=0.975)
             if subtitle:
                 # Position subtitle precisely relative to the top-right of the axes area
                 subtxt = ax1.text(1.0, 1.02, subtitle, transform=ax1.transAxes,
@@ -559,11 +656,15 @@ def plot_matplotlib(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_or
                 fig.subplots_adjust(top=0.95)
         except Exception:
             # Fallback: use axes title only
-            ax1.set_title(scenario_titles.get(sc_name, sc_name))
+            if not hide_title:
+                ax1.set_title(scenario_titles.get(sc_name, sc_name))
 
         try:
             # Reserve just enough space for the titles
-            fig.tight_layout(rect=[0, 0, 1, 0.95] if subtitle else [0, 0, 1, 0.97])
+            if hide_title:
+                fig.tight_layout(rect=[0, 0, 1, 0.98])
+            else:
+                fig.tight_layout(rect=[0, 0, 1, 0.95] if subtitle else [0, 0, 1, 0.97])
         except Exception:
             fig.tight_layout()
 
@@ -632,6 +733,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--debug-layout", action="store_true", help="Draw bounding boxes for figure parts (titles/axes/legend) to debug layout")
     ap.add_argument("--run-dir", type=Path, help="Limit to a single scenario run directory (results/<scenario>_<ts>)")
     ap.add_argument("--no-hyperlinks", action="store_true", help="Disable clickable OSC8 hyperlinks in output paths")
+    ap.add_argument("--no-title", action="store_true", help="Hide the main title on plots")
     args = ap.parse_args(argv)
 
     scenarios, var_order, scenario_subtitles, scenario_titles, run_dir_paths, scenario_impl_orders = gather_results(
@@ -671,10 +773,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     baseline_impl = None if (args.relative_to and args.relative_to.lower() == 'none') else args.relative_to
     metric_y2 = None if (args.metric_y2 and args.metric_y2.lower() == 'none') else args.metric_y2
     files = plot_matplotlib(scenarios, var_order, scenario_subtitles, scenario_titles, impl_order, args.metric_y1, metric_y2, args.y2_mode,
-                            run_dir_paths, baseline_impl=baseline_impl, debug_layout=args.debug_layout)
+                            run_dir_paths, baseline_impl=baseline_impl, debug_layout=args.debug_layout, hide_title=args.no_title)
     # Also generate latency percentile plots if .hdr or percentile CSV files exist
     lat_files = plot_latency_percentiles(scenarios, var_order, scenario_subtitles, scenario_titles, impl_order, run_dir_paths,
-                                         percentiles=[50.0, 90.0, 99.0, 99.9, 99.99], debug_layout=args.debug_layout)
+                                         percentiles=[50.0, 90.0, 99.0, 99.9, 99.99], debug_layout=args.debug_layout, hide_title=args.no_title)
     files.extend(lat_files)
     # Sort files by parent directory creation time in descending order
     files.sort(key=lambda p: p.parent.stat().st_ctime, reverse=True)
@@ -706,7 +808,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         parent = f.parent
         if parent not in parents_printed:
             print(" -", _hyper(parent) + "/")
-            parents_printed.add(parent)
+            parents_printed.add(parent) 
         print("   ", _hyper(f))
     return 0
 

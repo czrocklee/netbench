@@ -45,7 +45,7 @@ public:
     bool shutdown_on_disconnect = false;
     std::atomic<int>* shutdown_counter = nullptr;
 #ifdef IO_URING_API
-    bool zerocopy;
+    bool zerocopy = false;
     std::uint32_t uring_depth;
     std::uint16_t buffer_count;
     std::uint16_t buffer_group_id;

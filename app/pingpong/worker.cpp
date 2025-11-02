@@ -46,7 +46,10 @@ void worker::add_connection(net::socket sock, std::size_t msg_size)
     iter->msg_size = msg_size;
     iter->pacing_period_ns = config_.target_msg_rate > 0 ? (1000000000ull / config_.target_msg_rate) : 0ull;
     iter->next_eligible_send_ns = 0;
-    // sock.set_option(::asio::ip::tcp::no_delay{true});
+    
+    sock.non_blocking(true);
+    sock.set_option(::asio::ip::tcp::no_delay{true});
+    
     iter->receiver.open(std::move(sock));
     iter->sender.open(iter->receiver.get_socket());
     iter->receiver.start([this, iter](std::error_code ec, auto&& data) {

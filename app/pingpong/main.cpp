@@ -114,7 +114,6 @@ int main(int argc, char** argv)
 
       auto const md = metadata{.msg_size = msg_size};
       sock.send(::asio::buffer(&md, sizeof(md)), 0);
-      sock.non_blocking(true);
 
       pingponger.add_connection(std::move(sock), msg_size);
       pingponger.send_initial_message();

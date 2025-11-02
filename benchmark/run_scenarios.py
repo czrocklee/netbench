@@ -175,6 +175,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     # Auto-plot options
     p.add_argument("--auto-plot", action="store_true", help="Generate plots after each scenario")
     p.add_argument("--plot-relative-to", default="bsd", help="Baseline impl for percentage labels; use 'none' to disable")
+    p.add_argument("--plot-no-title", action="store_true", help="Hide the main title text in plots")
     p.add_argument("--plot-out-dir", type=Path, help="Output directory for plots (defaults to results/plots)")
     p.add_argument("--scenario-var-values", action="append", default=[],
                    help="Override var_values for a specific scenario: 'scenario:CSV_OR_RANGE'. Example: --scenario-var-values vary_workers:1,2,4,8")

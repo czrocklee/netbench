@@ -43,6 +43,7 @@ class FixedParams:
     bsd_read_limit: int = 0
     uring_buffer_count: int = 0
     uring_per_conn_buffer_pool: bool = False
+    uring_zerocopy: bool = False
 
 # A linkage function can compute a dependent field given the current fixed params,
 # the varying field name, and its value.

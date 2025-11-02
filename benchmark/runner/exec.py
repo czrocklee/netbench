@@ -342,5 +342,6 @@ def run_from_args(args, scenarios: List[Scenario]) -> int:
                 args.plot_relative_to,
                 impls=list(s.implementations),
                 run_dir=sc_dir,
+                no_title=getattr(args, 'plot_no_title', False),
             )
     return 0

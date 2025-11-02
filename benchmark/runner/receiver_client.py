@@ -48,7 +48,9 @@ def start_receiver(receiver_host: str, receiver_app_dir: Path, impl: str, fixed:
         if fixed.uring_buffer_count > 0:
             args += ["--buffer-count", str(fixed.uring_buffer_count)]
         if fixed.uring_per_conn_buffer_pool:
-            args += ["--per-connection-buffer-pool", "true"]
+            args += ["--per-connection-buffer-pool"]
+        if fixed.uring_zerocopy:
+            args += ["--zerocopy"]
 
     # CPU affinity for receiver workers: use FixedParams only
     if fixed.worker_cpus:

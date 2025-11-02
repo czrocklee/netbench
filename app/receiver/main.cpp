@@ -92,7 +92,7 @@ int main(int argc, char const* argv[])
     ->default_val(5);
 
 #ifdef IO_URING_API
-  app.add_option("-z,--zerocopy", cfg.zerocopy, "Use zerocopy send or not")->default_val(true);
+  app.add_flag("-z,--zerocopy", cfg.zerocopy, "Use zerocopy send or not");
 
   app.add_option("--buffer-count", cfg.buffer_count, "Number of buffers in pool prepared for each worker")
     ->default_val(2048)
@@ -102,12 +102,10 @@ int main(int argc, char const* argv[])
     ->default_val(1024 * 16)
     ->transform(CLI::AsSizeValue(false));
 
-  app
-    .add_option(
-      "--per-connection-buffer-pool",
-      cfg.per_connection_buffer_pool,
-      "Each connection uses its own provided_buffer_pool")
-    ->default_val(false);
+  app.add_flag(
+    "--per-connection-buffer-pool",
+    cfg.per_connection_buffer_pool,
+    "Each connection uses its own provided_buffer_pool");
 
 #elifdef BSD_API
   app.add_option("--read-limit", cfg.read_limit, "Optional read limit for BSD API (0 for no limit)")
