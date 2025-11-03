@@ -99,6 +99,11 @@ int main(int argc, char** argv)
   unsigned num_workers;
   app.add_option("-w,--workers", num_workers, "Number of worker threads to start")->default_val(1);
 
+  // Optional: pin worker threads to specific CPUs (comma-separated list, index order)
+  std::vector<int> worker_cpus; // size <= num_workers; others unpinned
+  app.add_option("--worker-cpu-ids", worker_cpus, "Comma-separated CPU IDs for workers in index order (e.g., 0,2,4)")
+    ->delimiter(',');
+
   int metric_hud_interval_secs;
   app
     .add_option(
@@ -126,6 +131,14 @@ int main(int argc, char** argv)
   bool shutdown_on_disconnect;
   app.add_flag("-d,--shutdown-on-disconnect", shutdown_on_disconnect, "Shutdown server when all clients disconnect");
 
+  int collect_latency_every_n_samples;
+  app
+    .add_option(
+      "-c,--collect-latency-every-n-samples",
+      collect_latency_every_n_samples,
+      "Collect one latency sample every N messages (0 to disable)")
+    ->default_val(0);
+
   // Results and tags
   std::string results_dir;
   app.add_option("-r,--results-dir", results_dir, "Directory to write run outputs (metadata.json, metrics.json)")
@@ -135,6 +148,13 @@ int main(int argc, char** argv)
   app.add_option("--tag", tags, "User tags (repeatable: --tag k=v)");
 
   CLI11_PARSE(app, argc, argv);
+
+  if (collect_latency_every_n_samples > 0)
+  {
+    std::cerr << "Placeholder only, Latency collection is not supported in this ASIO multi-threaded receiver yet."
+              << std::endl;
+    return 1;
+  }
 
   if (num_workers <= 0)
   {
@@ -156,6 +176,7 @@ int main(int argc, char** argv)
 
     std::list<connection> conns;
     std::mutex conns_lock;
+    std::size_t closed_conns = 0;
     net::io_context io_ctx{static_cast<int>(num_workers)};
 
     net::acceptor acceptor{io_ctx};
@@ -194,15 +215,21 @@ int main(int argc, char** argv)
       iter->receiver.start([&, iter](std::error_code ec, ::asio::const_buffer data) {
         if (ec)
         {
-          std::cerr << "Error receiving data: " << ec.message() << std::endl;
+          iter->metrics.end_ts = std::chrono::steady_clock::now();
 
+          if (!shutdown_on_disconnect)
           {
-            iter->metrics.end_ts = std::chrono::steady_clock::now();
+            ::asio::post(io_ctx, [&, iter] {
+              std::lock_guard<std::mutex> lg{conns_lock};
+              conns.erase(iter);
+            });
 
-            if (std::lock_guard<std::mutex> lg{conns_lock}; shutdown_on_disconnect && conns.empty())
-            {
-              shutdown_counter = 0;
-            }
+            return;
+          }
+
+          if (std::lock_guard<std::mutex> lg{conns_lock}; ++closed_conns == conns.size())
+          {
+            shutdown_counter = 0;
           }
 
           return;
@@ -219,18 +246,30 @@ int main(int argc, char** argv)
 
     for (unsigned i = 0; i < num_workers; ++i)
     {
-      workers.emplace_back([&io_ctx]() { io_ctx.run(); });
+      int cpu_id = (i < worker_cpus.size() ? worker_cpus[i] : -1);
+
+      workers.emplace_back([&io_ctx, cpu_id] {
+        if (cpu_id >= 0)
+        {
+          set_thread_cpu_affinity(cpu_id);
+        }
+
+        io_ctx.run();
+      });
     }
 
     auto metric_hud = setup_metric_hud(std::chrono::seconds{metric_hud_interval_secs}, [&] {
       metric total_metric{};
 
-      std::lock_guard<std::mutex> lg{conns_lock};
-      for (auto const& conn : conns)
       {
-        total_metric.ops += conn.ops.load(std::memory_order_relaxed);
-        total_metric.msgs += conn.msgs.load(std::memory_order_relaxed);
-        total_metric.bytes += conn.bytes.load(std::memory_order_relaxed);
+        std::lock_guard<std::mutex> lg{conns_lock};
+
+        for (auto const& conn : conns)
+        {
+          total_metric.ops += conn.ops.load(std::memory_order_relaxed);
+          total_metric.msgs += conn.msgs.load(std::memory_order_relaxed);
+          total_metric.bytes += conn.bytes.load(std::memory_order_relaxed);
+        }
       }
 
       return total_metric;
@@ -246,11 +285,16 @@ int main(int argc, char** argv)
       }
     }
 
-    if (shutdown_counter < 0)
+    if (shutdown_counter == 0)
+    {
+      std::cout << "All clients disconnected, server stopped." << std::endl;
+    }
+    else
     {
       std::cout << "\nShutdown signal received, stopping server..." << std::endl;
-      io_ctx.stop();
     }
+
+    io_ctx.stop();
 
     for (auto& worker : workers)
     {
@@ -269,11 +313,8 @@ int main(int argc, char** argv)
         std::filesystem::create_directories(dir);
       }
 
-      auto const metadata_file = dir / "metadata.json";
-      dump_run_metadata(metadata_file, std::vector<std::string>{argv, argv + argc}, tags);
-      std::cout << "Run metadata written to " << metadata_file << std::endl;
+      dump_run_metadata(dir, std::vector<std::string>{argv, argv + argc}, tags);
 
-      auto const metrics_file = dir / "metrics.json";
       std::vector<metric const*> all_metrics;
 
       for (auto& conn : conns)
@@ -284,8 +325,7 @@ int main(int argc, char** argv)
         all_metrics.push_back(&conn.metrics);
       }
 
-      dump_metrics(metrics_file, all_metrics);
-      std::cout << "Metrics written to " << metrics_file << std::endl;
+      dump_metrics(dir, all_metrics);
     }
 
     std::cout << "Server has shut down gracefully." << std::endl;

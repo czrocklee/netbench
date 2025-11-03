@@ -25,6 +25,8 @@ class FixedParams:
     # Pingpong CPUs: per-process CPU id; used for both uring/asio/bsd
     pp_acceptor_cpu: Optional[int] = None
     pp_initiator_cpu: Optional[int] = None
+    # Pingpong (uring): optional SQ entries override
+    pp_uring_sq_entries: int = 0
     # Optional sqpoll CPUs for io_uring (applies if impl == 'uring')
     pp_acceptor_sqpoll_cpu: Optional[int] = None
     pp_initiator_sqpoll_cpu: Optional[int] = None
@@ -44,6 +46,9 @@ class FixedParams:
     uring_buffer_count: int = 0
     uring_per_conn_buffer_pool: bool = False
     uring_zerocopy: bool = False
+    # Receiver (uring): queue sizes; 0/-1 means use defaults
+    uring_sq_entries: int = 0
+    uring_cq_entries: int = -1
 
 # A linkage function can compute a dependent field given the current fixed params,
 # the varying field name, and its value.

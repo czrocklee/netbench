@@ -141,7 +141,7 @@ class Runner:
         return rc_run_client(self.client_host, self.client_app_dir, fixed, duration_sec, results_dir,
                              self.client_extra_args)
 
-    def _stop_receiver(self, proc: subprocess.Popen, timeout: float = 15.0):
+    def _stop_receiver(self, proc: subprocess.Popen, timeout: float = 30.0):
         """
         Waits for the receiver process to exit gracefully.
         The receiver is expected to shut down on its own when the client disconnects.

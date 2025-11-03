@@ -92,15 +92,18 @@ int main(int argc, char const* argv[])
     ->default_val(5);
 
 #ifdef IO_URING_API
-  app.add_flag("-z,--zerocopy", cfg.zerocopy, "Use zerocopy send or not");
+  app.add_flag("-z,--zerocopy", cfg.zerocopy, "Use zerocopy for echo sends");
 
   app.add_option("--buffer-count", cfg.buffer_count, "Number of buffers in pool prepared for each worker")
     ->default_val(2048)
     ->transform(CLI::AsSizeValue(false));
 
-  app.add_option("--uring-depth", cfg.uring_depth, "io_uring queue depth")
+  app.add_option("--sq-entries", cfg.sq_entries, "io_uring SQ entries")
     ->default_val(1024 * 16)
     ->transform(CLI::AsSizeValue(false));
+
+  int uring_cq_entries;
+  app.add_option("--cq-entries", uring_cq_entries, "io_uring CQ entries (set only when > 0)")->default_val(-1);
 
   app.add_flag(
     "--per-connection-buffer-pool",
@@ -146,12 +149,16 @@ int main(int argc, char const* argv[])
     {
 #ifdef IO_URING_API
       io_uring_params params{};
-      params.cq_entries = 16384;
-      // params.flags |= IORING_SETUP_CQSIZE;
       params.flags |= IORING_SETUP_R_DISABLED;
       params.flags |= IORING_SETUP_SINGLE_ISSUER;
       params.flags |= IORING_SETUP_DEFER_TASKRUN;
       params.flags |= (IORING_SETUP_COOP_TASKRUN); //| IORING_SETUP_TASKRUN_FLAG);
+
+      if (uring_cq_entries > 0)
+      {
+        params.flags |= IORING_SETUP_CQSIZE;
+        params.cq_entries = static_cast<unsigned>(uring_cq_entries);
+      }
 
       cfg.buffer_group_id = static_cast<std::uint16_t>(i);
       cfg.params = params;
@@ -242,9 +249,7 @@ int main(int argc, char const* argv[])
         std::filesystem::create_directories(dir);
       }
 
-      auto const metadata_file = dir / "metadata.json";
-      dump_run_metadata(metadata_file, std::vector<std::string>{argv, argv + argc}, tags);
-      std::cout << "Run metadata written to " << metadata_file << std::endl;
+      dump_run_metadata(dir, std::vector<std::string>{argv, argv + argc}, tags);
 
       auto all_metrics = std::vector<metric const*>{};
 

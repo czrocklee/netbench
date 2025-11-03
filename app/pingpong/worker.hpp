@@ -29,9 +29,8 @@ public:
   {
     std::size_t buffer_size;
     std::uint64_t warmup_count = 10000;
-    std::uint64_t target_msg_rate = 0; // messages per second, 0 = unlimited
 #ifdef IO_URING_API
-    std::uint32_t uring_depth;
+    std::uint32_t sq_entries;
     std::uint16_t buffer_count;
     ::io_uring_params params{};
 #endif
@@ -61,10 +60,6 @@ private:
     std::size_t msg_size = 0;
     std::uint64_t send_ts = 0;
     std::uint64_t msg_cnt = 0;
-
-    // pacing (initiator only): period 0 means disabled
-    std::uint64_t pacing_period_ns = 0;
-    std::uint64_t next_eligible_send_ns = 0;
   };
 
   void on_data(connection& conn, ::asio::const_buffer const data);

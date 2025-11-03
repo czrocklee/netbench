@@ -46,7 +46,7 @@ public:
     std::atomic<int>* shutdown_counter = nullptr;
 #ifdef IO_URING_API
     bool zerocopy = false;
-    std::uint32_t uring_depth;
+    std::uint32_t sq_entries;
     std::uint16_t buffer_count;
     std::uint16_t buffer_group_id;
     bool per_connection_buffer_pool = false;

@@ -64,7 +64,6 @@ def run_initiator(client_host: str, client_app_dir: Path, impl: str, fixed: Fixe
         "--warmup-count", str(getattr(fixed, 'warmup_count', 0)),
         "--duration-secs", str(getattr(fixed, 'duration_sec', 0)),
         "--max-samples", str(getattr(fixed, 'max_samples', 0)),
-        "--target-msg-rate", str(getattr(fixed, 'msgs_per_sec', 0)),
         "--metric-hud-interval-secs", str(getattr(fixed, 'metric_hud_interval_secs', 0)),
         "--results-dir", str(results_dir),
     ]

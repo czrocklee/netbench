@@ -85,11 +85,15 @@ def default_scenarios() -> List[Scenario]:
         ),
         Scenario(
             name="receive_throughput_by_connections",
-            title="Receive Throughput vs connections",
-            fixed=dc.replace(fixed, buffer_size=512, bsd_read_limit = 32 * 1024),
+            title="Receive Throughput vs Number of Connections",
+            fixed=dc.replace(
+                fixed, 
+                bsd_read_limit = 32 * 1024, 
+                uring_buffer_count = 32768,
+                uring_cq_entries = 32768
+            ),
             var_key="conns",
-            var_values=[1, 4, 16, 256],
-            linkages={"uring_buffer_count": lambda params: int(params.conns * 128)},
+            var_values=[1, 16, 256, 1024],
             implementations=["bsd", "uring", "asio", "asio_uring"],
         ),
         Scenario(
@@ -98,8 +102,8 @@ def default_scenarios() -> List[Scenario]:
             fixed=fixed,
             var_key="workers",
             var_values=[1, 2, 4, 8],
-            linkages={"senders": lambda params: int(params.workers)},
-            implementations=["bsd", "uring", "asio", "asio_uring"],
+            linkages={"conns": lambda params: int(params.workers)},
+            implementations=["bsd", "uring", "asio", "asio_uring", "asio_ioctx_mt"],
         ),
         Scenario(
             name="receive_latency_by_message_rate",
@@ -123,15 +127,6 @@ def default_scenarios() -> List[Scenario]:
         max_samples=0,
     )
     scs += [
-        Scenario(
-            name="pingpong_latency_by_msg_rate",
-            title="Pingpong RTT vs Message Rate",
-            fixed=pp_fixed,
-            var_key="msgs_per_sec",
-            var_values=[0, 1000, 10000, 100000],
-            implementations=["bsd", "uring", "uring_sqpoll", "asio", "asio_uring"],
-            mode="pingpong",
-        ),
         Scenario(
             name="pingpong_latency_by_msg_size",
             title="Pingpong RTT vs Message Size",

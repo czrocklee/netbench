@@ -7,7 +7,7 @@
 worker::worker(config cfg)
   : config_{std::move(cfg)},
 #ifdef IO_URING_API
-    io_ctx_{config_.uring_depth, config_.params},
+    io_ctx_{config_.sq_entries, config_.params},
     buffer_pool_{io_ctx_, config_.buffer_size, config_.buffer_count, uring::provided_buffer_pool::group_id_type{0}},
 #elifdef ASIO_API
     io_ctx_{1},
@@ -22,7 +22,7 @@ worker::worker(config cfg)
 
 void worker::send_initial_message()
 {
-  
+
   unsigned char c = 'a';
 
   for (auto& conn : connections_)
@@ -44,19 +44,17 @@ void worker::add_connection(net::socket sock, std::size_t msg_size)
     auto iter = connections_.emplace(connections_.begin(), io_ctx_, config_.buffer_size);
 #endif
     iter->msg_size = msg_size;
-    iter->pacing_period_ns = config_.target_msg_rate > 0 ? (1000000000ull / config_.target_msg_rate) : 0ull;
-    iter->next_eligible_send_ns = 0;
-    
+
     sock.non_blocking(true);
     sock.set_option(::asio::ip::tcp::no_delay{true});
-    
+
     iter->receiver.open(std::move(sock));
     iter->sender.open(iter->receiver.get_socket());
     iter->receiver.start([this, iter](std::error_code ec, auto&& data) {
       if (ec)
       {
         std::cerr << "Error receiving data: " << ec.message() << std::endl;
-        
+
         if (++closed_conns_ == connections_.size())
         {
           shutdown_counter_->store(0, std::memory_order::relaxed);
@@ -86,27 +84,6 @@ void worker::on_data(connection& conn, ::asio::const_buffer const data)
   {
     auto now = utility::nanos_since_epoch();
     auto send_ts = conn.send_ts;
-    // optional pacing for initiator: wait until next eligible time before sending next message
-    if (conn.pacing_period_ns > 0)
-    {
-      if (conn.next_eligible_send_ns == 0)
-      {
-        conn.next_eligible_send_ns = now; // first pacing anchor
-      }
-      else
-      {
-        // advance schedule by exactly one period; if we're late, skip sleeping
-        conn.next_eligible_send_ns += conn.pacing_period_ns;
-      }
-
-      auto const now2 = utility::nanos_since_epoch();
-      if (conn.next_eligible_send_ns > now2)
-      {
-        auto const wait_ns = conn.next_eligible_send_ns - now2;
-        std::this_thread::sleep_for(std::chrono::nanoseconds{wait_ns});
-      }
-    }
-
     conn.send(data, utility::nanos_since_epoch());
 
     // std::cout << conn.msg_cnt << std::endl;

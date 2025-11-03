@@ -77,7 +77,7 @@ std::optional<metric_hud> setup_metric_hud(std::chrono::seconds interval, std::m
 }
 
 void dump_run_metadata(
-  std::filesystem::path const& path,
+  std::filesystem::path const& dir,
   std::vector<std::string> const& cmd_args,
   std::vector<std::string> const& tags)
 {
@@ -100,8 +100,10 @@ void dump_run_metadata(
     {"os_name", mi.os_name},
     {"os_version", mi.os_version}};
 
-  auto ofs = std::ofstream{path};
+  auto const metadata_file = dir / "metadata.json";
+  auto ofs = std::ofstream{metadata_file};
   ofs << j.dump(2) << std::endl;
+  std::cout << "Run metadata written to " << metadata_file << std::endl;
 }
 
 void dump_metrics(std::filesystem::path const& dir, std::vector<metric const*> const& metrics)

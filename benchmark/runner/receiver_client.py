@@ -51,6 +51,11 @@ def start_receiver(receiver_host: str, receiver_app_dir: Path, impl: str, fixed:
             args += ["--per-connection-buffer-pool"]
         if fixed.uring_zerocopy:
             args += ["--zerocopy"]
+        # Optional ring sizes
+        if fixed.uring_sq_entries > 0:
+            args += ["--sq-entries", str(int(fixed.uring_sq_entries))]
+        if fixed.uring_cq_entries > 0:
+            args += ["--cq-entries", str(int(fixed.uring_cq_entries))]
 
     # CPU affinity for receiver workers: use FixedParams only
     if fixed.worker_cpus:
@@ -107,7 +112,7 @@ def run_client(client_host: str, client_app_dir: Path, fixed: FixedParams, durat
         return subprocess.call(full_cmd, stdout=log, stderr=subprocess.STDOUT)
 
 
-def stop_receiver(proc: subprocess.Popen, timeout: float = 15.0):
+def stop_receiver(proc: subprocess.Popen, timeout: float = 30.0):
     if proc.poll() is not None:
         return
     try:

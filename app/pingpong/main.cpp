@@ -61,10 +61,6 @@ int main(int argc, char** argv)
   std::vector<std::string> tags;
   app.add_option("--tag", tags, "User tags (repeatable: --tag k=v)");
 
-  std::uint64_t target_msg_rate = 0; // messages per second, 0 = unlimited
-  app.add_option("--target-msg-rate", cfg.target_msg_rate, "Target message rate (msgs/sec), 0 = unlimited")
-    ->default_val(0);
-
   int cpu_affinity;
   app.add_option("-c,--cpu-id", cpu_affinity, "cpu affinity for the io_context thread")->default_val(-1);
 
@@ -79,7 +75,7 @@ int main(int argc, char** argv)
   app.add_option("-k,--sqpoll-cpu-id", sqpoll_cpu_affinity, "cpu affinity for the kernel polling thread")
     ->default_val(-1);
 
-  app.add_option("-d,--uring-depth", cfg.uring_depth, "io_uring queue depth")->default_val(512);
+  app.add_option("--sq-entries", cfg.sq_entries, "io_uring SQ entries")->default_val(512);
 #endif
   CLI11_PARSE(app, argc, argv);
 
@@ -230,8 +226,7 @@ int main(int argc, char** argv)
     try
     {
       std::filesystem::create_directories(results_dir);
-      dump_run_metadata(
-        std::filesystem::path{results_dir} / "metadata.json", std::vector<std::string>{argv, argv + argc}, tags);
+      dump_run_metadata(std::filesystem::path{results_dir}, std::vector<std::string>{argv, argv + argc}, tags);
     }
     catch (std::exception const& e)
     {

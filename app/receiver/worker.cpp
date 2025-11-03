@@ -11,7 +11,7 @@
 worker::worker(config cfg)
   : config_{std::move(cfg)},
 #ifdef IO_URING_API
-    io_ctx_{config_.uring_depth, config_.params},
+    io_ctx_{config_.sq_entries, config_.params},
 #elifdef ASIO_API
     io_ctx_{1},
 #endif
