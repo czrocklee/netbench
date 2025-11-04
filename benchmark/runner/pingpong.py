@@ -40,6 +40,11 @@ def start_acceptor(receiver_host: str, receiver_app_dir: Path, impl: str, fixed:
     elif impl == 'uring':
         # Baseline uring: disable SQPOLL explicitly
         args += ["--no-sqpoll"]
+    # Socket buffers
+    if fixed.so_rcvbuf_size:
+        args += ["--so-rcvbuf", str(fixed.so_rcvbuf_size)]
+    if fixed.so_sndbuf_size:
+        args += ["--so-sndbuf", str(fixed.so_sndbuf_size)]
 
     log = (results_dir / f"pingpong_acceptor_{impl}.stdout").open("w")
     cmd = (results_dir / f"pingpong_acceptor_{impl}.cmd")
@@ -80,6 +85,11 @@ def run_initiator(client_host: str, client_app_dir: Path, impl: str, fixed: Fixe
     elif impl == 'uring':
         # Baseline uring: disable SQPOLL explicitly
         args += ["--no-sqpoll"]
+    # Socket buffers
+    if getattr(fixed, 'so_rcvbuf_size', None):
+        args += ["--so-rcvbuf", str(fixed.so_rcvbuf_size)]
+    if getattr(fixed, 'so_sndbuf_size', None):
+        args += ["--so-sndbuf", str(fixed.so_sndbuf_size)]
     if impl == 'uring_zc':
         args += ["--no-sqpoll", "--zerocopy"]
     for k, v in tags.items():

@@ -46,6 +46,17 @@ void worker::add_connection(net::socket sock, std::size_t msg_size)
     iter->msg_size = msg_size;
 
     sock.non_blocking(true);
+
+    if (config_.socket_recv_buffer_size > 0)
+    {
+      sock.set_option(::asio::socket_base::receive_buffer_size{config_.socket_recv_buffer_size});
+    }
+
+    if (config_.socket_send_buffer_size > 0)
+    {
+      sock.set_option(::asio::socket_base::send_buffer_size{config_.socket_send_buffer_size}); 
+    }
+
     sock.set_option(::asio::ip::tcp::no_delay{true});
 
     iter->receiver.open(std::move(sock));

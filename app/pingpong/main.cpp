@@ -58,6 +58,16 @@ int main(int argc, char** argv)
   app.add_option("-r,--results-dir", results_dir, "Directory to write histogram and metrics (initiator only)")
     ->default_val("");
 
+  app
+    .add_option(
+      "--so-rcvbuf", cfg.socket_recv_buffer_size, "Socket receive buffer size in bytes (0 for system default)")
+    ->default_val(0)
+    ->transform(CLI::AsSizeValue(false));
+
+  app.add_option("--so-sndbuf", cfg.socket_send_buffer_size, "Socket send buffer size in bytes (0 for system default)")
+    ->default_val(0)
+    ->transform(CLI::AsSizeValue(false));
+
   std::vector<std::string> tags;
   app.add_option("--tag", tags, "User tags (repeatable: --tag k=v)");
 
@@ -107,7 +117,6 @@ int main(int argc, char** argv)
 
     cfg.params = params;
 #endif
-
     auto pingponger = worker{cfg};
 
     if (initiator)

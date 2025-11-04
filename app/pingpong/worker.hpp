@@ -35,6 +35,8 @@ public:
     ::io_uring_params params{};
     bool zerocopy = false;
 #endif
+    int socket_recv_buffer_size;
+    int socket_send_buffer_size;
   };
 
   explicit worker(config cfg);
