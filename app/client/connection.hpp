@@ -23,7 +23,8 @@ public:
 
   void enable_drain() { bytes_to_drain_ = 0; }
   void set_nodelay(bool enable) { sock_.set_nodelay(enable); }
-  void set_socket_buffer_size(int size); 
+  void set_socket_recv_buffer_size(int size); 
+  void set_socket_send_buffer_size(int size); 
 
   // Drain helpers for ensuring echoed data is fully received before close when drain is enabled
   std::size_t bytes_sent_total() const { return total_sent_bytes_; }
@@ -36,7 +37,10 @@ private:
   bsd::socket sock_;
   std::vector<std::byte> msg_;
   ::asio::const_buffer buf_;
-  ::iovec iov_[IOV_MAX];
+  // We keep an iovec array sized IOV_MAX+1. The first entry (iov_[0]) is the head message, which may be partial.
+  // Entries from iov_[1] onward form a reusable "full_iov" template for subsequent bundles.
+  ::iovec iov_[IOV_MAX + 1];
+  ::mmsghdr msg_hdrs_[IOV_MAX];
   int bytes_to_drain_ = -1;
   std::size_t total_sent_bytes_ = 0;
   std::size_t total_drained_bytes_ = 0;

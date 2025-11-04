@@ -34,12 +34,15 @@ def start_receiver(receiver_host: str, receiver_app_dir: Path, impl: str, fixed:
     ]
     if fixed.busy_spin:
         args += ["--busy-spin", "true"]
-    if fixed.recv_so_rcvbuf > 0:
-        args += ["--so-rcvbuf", str(fixed.recv_so_rcvbuf)]
-    if fixed.send_so_sndbuf > 0:
-        args += ["--so-sndbuf", str(fixed.send_so_sndbuf)]
+
+    if fixed.so_rcvbuf_size:
+        args += ["--so-rcvbuf", str(fixed.so_rcvbuf_size)]
+    if fixed.so_sndbuf_size:
+        args += ["--so-sndbuf", str(fixed.so_sndbuf_size)]
     if fixed.echo != "none":
         args += ["--echo", fixed.echo]
+    if fixed.simulated_workload_delay_microsecs:
+        args += ["--simulated-workload-delay-nanos", str(int(fixed.simulated_workload_delay_microsecs * 1000))]
 
     if impl == "bsd":
         if fixed.bsd_read_limit > 0:
@@ -88,13 +91,17 @@ def run_client(client_host: str, client_app_dir: Path, fixed: FixedParams, durat
         "--msg-size", str(fixed.msg_size),
         "--msgs-per-sec", str(fixed.msgs_per_sec),
         "--stop-after-n-secs", str(duration_sec),
-        "--max-batch-size", str(fixed.max_send_batch_size),
+        "--max-send-size", str(fixed.max_send_size),
         "--metric-hud-interval-secs", str(fixed.metric_hud_interval_secs),
     ]
     if fixed.drain:
         args += ["--drain"]
     if fixed.nodelay:
         args += ["--nodelay"]
+    if fixed.so_rcvbuf_size:
+        args += ["--so-rcvbuf", str(fixed.so_rcvbuf_size)]
+    if fixed.so_sndbuf_size:
+        args += ["--so-sndbuf", str(fixed.so_sndbuf_size)]
     # Sender CPUs: use FixedParams only
     if fixed.sender_cpus:
         args += ["--sender-cpu-ids", str(fixed.sender_cpus)]

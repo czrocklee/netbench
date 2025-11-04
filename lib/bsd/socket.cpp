@@ -192,6 +192,25 @@ namespace bsd
     }
   }
 
+  std::size_t socket::sendmmsg(::mmsghdr* msgvec, std::size_t vlen, int flags)
+  {
+    if (int const sent_msgs = ::sendmmsg(sock_fd_, msgvec, static_cast<unsigned int>(vlen), flags); sent_msgs < 0)
+    {
+      if (errno == EAGAIN || errno == EWOULDBLOCK)
+      {
+        return 0; // Non-blocking send, no data sent
+      }
+      else
+      {
+        throw socket_exception{"sendmmsg failed"};
+      }
+    }
+    else
+    {
+      return sent_msgs;
+    }
+  }
+
   socket socket::accept()
   {
     ::sockaddr_storage their_addr{};

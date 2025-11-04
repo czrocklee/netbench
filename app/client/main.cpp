@@ -41,7 +41,11 @@ int main(int argc, char** argv)
 
   app.add_flag("-d,--drain", cfg.drain, "Enable receive buffer draining");
 
-  app.add_option("-S,--socket-buffer-size", cfg.socket_buffer_size, "Socket buffer size in bytes")
+  app.add_option("--so-rcvbuf", cfg.socket_recv_buffer_size, "Socket buffer size in bytes")
+    ->default_val(0)
+    ->transform(CLI::AsSizeValue(false));
+
+  app.add_option("--so-sndbuf", cfg.socket_send_buffer_size, "Socket buffer size in bytes")
     ->default_val(0)
     ->transform(CLI::AsSizeValue(false));
 
@@ -51,7 +55,9 @@ int main(int argc, char** argv)
 
   app.add_option("--stop-after-n-secs", cfg.stop_after_n_seconds, "Stop after n seconds")->default_val(0);
 
-  app.add_option("--max-batch-size", cfg.max_batch_size, "Max batch size for send operations")->default_val(IOV_MAX);
+  app.add_option("--max-send-size", cfg.max_send_size_bytes, "Max bytes to send per syscall window (0 = one bundle)")
+    ->default_val(0)
+    ->transform(CLI::AsSizeValue(false));
 
   int metric_hud_interval_secs;
   app
@@ -69,8 +75,7 @@ int main(int argc, char** argv)
 
   if (cfg.conns == 0 || (cfg.conns * senders != conns))
   {
-    std::cerr << "Total connections must be at least equal to number of senders and divisible by it."
-              << std::endl;
+    std::cerr << "Total connections must be at least equal to number of senders and divisible by it." << std::endl;
     return 1;
   }
 
@@ -87,10 +92,17 @@ int main(int argc, char** argv)
             << (cfg.stop_after_n_seconds > 0 ? std::to_string(cfg.stop_after_n_seconds) : "disabled") << std::endl;
   std::cout << "Nodelay: " << (cfg.nodelay ? "enabled" : "disabled") << std::endl;
   std::cout << "Drain: " << (cfg.drain ? "enabled" : "disabled") << std::endl;
-  std::cout << "Socket buffer size: "
-            << (cfg.socket_buffer_size > 0 ? std::to_string(cfg.socket_buffer_size) + " bytes" : "system default")
+  std::cout << "Socket recv buffer size: "
+            << (cfg.socket_recv_buffer_size > 0 ? std::to_string(cfg.socket_recv_buffer_size) + " bytes"
+                                                : "system default")
             << std::endl;
-  std::cout << "Max batch size: " << cfg.max_batch_size << std::endl;
+  std::cout << "Socket buffer size: "
+            << (cfg.socket_send_buffer_size > 0 ? std::to_string(cfg.socket_send_buffer_size) + " bytes"
+                                                : "system default")
+            << std::endl;
+  std::cout << "Max send size: "
+            << (cfg.max_send_size_bytes > 0 ? std::to_string(cfg.max_send_size_bytes) : std::string("one bundle"))
+            << std::endl;
 
   std::string host;
   std::string port;

@@ -48,6 +48,14 @@ int main(int argc, char const* argv[])
       "Collect latency metrics every n samples")
     ->default_val(0);
 
+  std::uint64_t simulated_workload_delay_nanos = 0;
+  app
+    .add_option(
+      "--simulated-workload-delay-nanos",
+      simulated_workload_delay_nanos,
+      "Busy-spin CPU per message for N microseconds (0 to disable)")
+    ->default_val(0);
+
   bool busy_spin;
   app.add_option("-s,--busy-spin", busy_spin, "Enable busy spin polling")->default_val(false);
 
@@ -112,7 +120,7 @@ int main(int argc, char const* argv[])
 
 #elifdef BSD_API
   app.add_option("--read-limit", cfg.read_limit, "Optional read limit for BSD API (0 for no limit)")
-    ->default_val(0)
+    ->default_val(1024 * 64)
     ->transform(CLI::AsSizeValue(false));
 #endif
 
@@ -131,6 +139,9 @@ int main(int argc, char const* argv[])
     shutdown_counter = num_workers;
     cfg.shutdown_counter = &shutdown_counter;
   }
+
+  // Apply parsed workload delay (in microseconds)
+  cfg.simulated_workload_delay = std::chrono::nanoseconds{simulated_workload_delay_nanos};
 
   try
   {

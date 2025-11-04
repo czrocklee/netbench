@@ -49,7 +49,14 @@ void worker::add_connection(net::socket sock, std::size_t msg_size)
     sock.set_option(::asio::ip::tcp::no_delay{true});
 
     iter->receiver.open(std::move(sock));
+    // Open sender; for io_uring, enable zerocopy if configured
+#ifdef IO_URING_API
+    iter->sender.open(
+      iter->receiver.get_socket(),
+      config_.zerocopy ? uring::sender::flags::zerocopy : uring::sender::flags::none);
+#else
     iter->sender.open(iter->receiver.get_socket());
+#endif
     iter->receiver.start([this, iter](std::error_code ec, auto&& data) {
       if (ec)
       {

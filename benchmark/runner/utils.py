@@ -16,13 +16,13 @@ def has_flag_or_kv(tokens: Iterable[str], name: str) -> bool:
 
 # --- Scenario var_values parsing ---
 
-def parse_int_list_spec(spec: str) -> List[int]:
+def parse_number_list_spec(spec: str) -> List[float]:
     s = spec.strip()
     if not s:
         return []
     if "," in s:
         try:
-            return [int(x.strip()) for x in s.split(",") if x.strip()]
+            return [float(x.strip()) for x in s.split(",") if x.strip()]
         except Exception:
             raise ValueError(f"Invalid CSV list: {spec}")
     m = re.match(r"^\s*(-?\d+)\s*\.\.\s*(-?\d+)(?::\s*(-?\d+)\s*)?$", s)
@@ -43,9 +43,9 @@ def parse_int_list_spec(spec: str) -> List[int]:
             while i >= end:
                 vals.append(i)
                 i += step
-        return vals
-    if re.match(r"^\s*-?\d+\s*$", s):
-        return [int(s)]
+        return [float(v) for v in vals]
+    if re.match(r"^\s*-?\d+(?:\.\d+)?\s*$", s):
+        return [float(s)]
     raise ValueError(f"Invalid var-values spec: {spec}")
 
 
@@ -55,7 +55,7 @@ def apply_scenario_var_values(scenarios, items):
             continue
         scen, spec = item.split(":", 1)
         try:
-            vals = parse_int_list_spec(spec)
+            vals = parse_number_list_spec(spec)
         except Exception:
             continue
         for sc in scenarios:

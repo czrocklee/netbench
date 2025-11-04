@@ -31,10 +31,12 @@ def start_acceptor(receiver_host: str, receiver_app_dir: Path, impl: str, fixed:
     ]
     if fixed.pp_acceptor_cpu is not None:
         args += ["--cpu-id", str(int(fixed.pp_acceptor_cpu))]
-    if impl == 'uring_sqpoll':
+    if impl in ('uring_sqpoll', 'uring_sqpoll_zc'):
         # SQPOLL variant: allow specifying kernel poller CPU
         if fixed.pp_acceptor_sqpoll_cpu is not None:
             args += ["--sqpoll-cpu-id", str(int(fixed.pp_acceptor_sqpoll_cpu))]
+        if impl == 'uring_sqpoll_zc':
+            args += ["--zerocopy"]
     elif impl == 'uring':
         # Baseline uring: disable SQPOLL explicitly
         args += ["--no-sqpoll"]
@@ -69,13 +71,17 @@ def run_initiator(client_host: str, client_app_dir: Path, impl: str, fixed: Fixe
     ]
     if fixed.pp_initiator_cpu is not None:
         args += ["--cpu-id", str(int(fixed.pp_initiator_cpu))]
-    if impl == 'uring_sqpoll':
+    if impl in ('uring_sqpoll', 'uring_sqpoll_zc'):
         # SQPOLL variant: allow specifying kernel poller CPU
         if fixed.pp_initiator_sqpoll_cpu is not None:
             args += ["--sqpoll-cpu-id", str(int(fixed.pp_initiator_sqpoll_cpu))]
+        if impl == 'uring_sqpoll_zc':
+            args += ["--zerocopy"]
     elif impl == 'uring':
         # Baseline uring: disable SQPOLL explicitly
         args += ["--no-sqpoll"]
+    if impl == 'uring_zc':
+        args += ["--no-sqpoll", "--zerocopy"]
     for k, v in tags.items():
         args += ["--tag", f"{k}={v}"]
 

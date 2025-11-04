@@ -7,6 +7,8 @@
 #include <cstring>
 #include <thread>
 #include <chrono>
+#include <vector>
+#include <sys/socket.h>
 
 namespace
 {
@@ -33,7 +35,15 @@ connection::connection(int conn_id, std::size_t msg_size) : conn_id_{conn_id}, s
     }
   }
 
-  std::fill_n(iov_, IOV_MAX, ::iovec{.iov_base = msg_.data(), .iov_len = msg_.size()});
+  std::fill_n(iov_, IOV_MAX + 1, ::iovec{.iov_base = msg_.data(), .iov_len = msg_.size()});
+  std::fill_n(msg_hdrs_, IOV_MAX, ::mmsghdr{});
+
+  msg_hdrs_[0].msg_hdr.msg_iov = iov_;
+
+  for (int b = 1; b < IOV_MAX; ++b)
+  {
+    msg_hdrs_[b].msg_hdr.msg_iov = &iov_[1];
+  }
 }
 
 void connection::connect(std::string const& host, std::string const& port, std::string const& bind_address)
@@ -67,9 +77,7 @@ void connection::connect(std::string const& host, std::string const& port, std::
 
 std::size_t connection::try_send(std::size_t count)
 {
-  std::size_t msgs_to_send = std::min(count, static_cast<std::size_t>(IOV_MAX));
-
-  // Here we just using a single message and using iovec to replicate it for a whole batch.
+  std::size_t msgs_to_send = std::min(count, static_cast<std::size_t>(IOV_MAX * IOV_MAX));
 
   if (auto sent = msg_.size() - iov_[0].iov_len; sent == 0 || sent >= timestamp_header_size)
   {
@@ -86,7 +94,29 @@ std::size_t connection::try_send(std::size_t count)
 
   try
   {
-    bytes_sent = sock_.send(iov_, msgs_to_send, 0);
+    // Fast path: within one bundle
+    if (msgs_to_send <= static_cast<std::size_t>(IOV_MAX))
+    {
+      bytes_sent = sock_.send(iov_, msgs_to_send, 0);
+    }
+    else // Multi-bundle path using sendmmsg; reuse iov_ with iov_[1..] as the full_iov template
+    {
+      std::size_t const bundles = (msgs_to_send + IOV_MAX - 1) / IOV_MAX;
+
+      for (std::size_t b = 0; b < bundles; ++b)
+      {
+        std::size_t this_bundle_msgs = std::min(msgs_to_send, static_cast<std::size_t>(IOV_MAX));
+        msg_hdrs_[b].msg_hdr.msg_iovlen = this_bundle_msgs;
+        msgs_to_send -= this_bundle_msgs;
+      }
+
+      auto const msgs_sent = sock_.sendmmsg(msg_hdrs_, bundles, 0);
+
+      for (int i = 0; i < msgs_sent; ++i)
+      {
+        bytes_sent += msg_hdrs_[i].msg_len;
+      }
+    }
   }
   catch (std::exception const& e)
   {
@@ -94,13 +124,12 @@ std::size_t connection::try_send(std::size_t count)
     std::terminate();
   }
 
-  // Track total bytes sent for drain parity
   total_sent_bytes_ += bytes_sent;
-
-  if (bytes_to_drain_ >= 0 && (bytes_to_drain_ += bytes_sent) > 1024 * 16)
+  
+  if (bytes_to_drain_ >= 0)//&& (bytes_to_drain_ += bytes_sent) > 1024 * 64)
   {
     try_drain_socket();
-    bytes_to_drain_ = 0;
+    //bytes_to_drain_ = 0;
   }
 
   if (bytes_sent < iov_[0].iov_len)
@@ -110,16 +139,20 @@ std::size_t connection::try_send(std::size_t count)
     return 0;
   }
 
-  auto bytes_sent_except_first = bytes_sent - iov_[0].iov_len;
-  auto offset = bytes_sent_except_first % msg_.size();
+  auto const bytes_sent_except_first = bytes_sent - iov_[0].iov_len;
+  auto const offset = bytes_sent_except_first % msg_.size();
   iov_[0].iov_base = msg_.data() + offset;
   iov_[0].iov_len = msg_.size() - offset;
   return 1 + bytes_sent_except_first / msg_.size();
 }
 
-void connection::set_socket_buffer_size(int size)
+void connection::set_socket_recv_buffer_size(int size)
 {
   sock_.set_option(::asio::socket_base::receive_buffer_size{size});
+}
+
+void connection::set_socket_send_buffer_size(int size)
+{
   sock_.set_option(::asio::socket_base::send_buffer_size{size});
 }
 
@@ -130,7 +163,7 @@ void connection::try_drain_socket()
   do
   {
     char dummy;
-    bytes_read = sock_.recv(&dummy, 1024 * 1024, MSG_TRUNC | MSG_DONTWAIT);
+    bytes_read = sock_.recv(&dummy, 16 * 1024 * 1024, MSG_TRUNC);
     total_drained_bytes_ += bytes_read;
   } while (bytes_read > 0);
 }

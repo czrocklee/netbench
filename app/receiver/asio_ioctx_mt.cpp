@@ -21,6 +21,7 @@ using net = rasio::tcp;
 #include <list>
 #include <mutex>
 #include <atomic>
+#include <chrono>
 
 namespace
 {
@@ -34,6 +35,7 @@ namespace
     std::size_t partial_bytes{0};
     std::unique_ptr<std::byte[]> partial_buffer;
     std::size_t partial_buffer_size{0};
+    std::chrono::nanoseconds workload_delay{0};
     metric metrics;
 
     connection(net::io_context& io_ctx, std::size_t buffer_size) : receiver(io_ctx, buffer_size) {}
@@ -77,8 +79,13 @@ namespace
       ops.store(ops.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
     }
 
-    void on_new_message(void const* buffer)
+    void on_new_message(void const* /*buffer*/)
     {
+      if (workload_delay.count() > 0)
+      {
+        busy_wait(workload_delay);
+      }
+
       msgs.store(msgs.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
     }
   };
@@ -144,6 +151,14 @@ int main(int argc, char** argv)
   app.add_option("-r,--results-dir", results_dir, "Directory to write run outputs (metadata.json, metrics.json)")
     ->default_val("");
 
+  std::int64_t simulated_workload_delay_nanos = 0;
+  app
+    .add_option(
+      "--simulated-workload-delay-nanos",
+      simulated_workload_delay_nanos,
+      "Busy-spin CPU per message for N microseconds (0 to disable)")
+    ->default_val(0);
+
   std::vector<std::string> tags;
   app.add_option("--tag", tags, "User tags (repeatable: --tag k=v)");
 
@@ -200,6 +215,7 @@ int main(int argc, char** argv)
       iter->msg_size = md.msg_size;
       iter->partial_buffer = std::make_unique<std::byte[]>(iter->msg_size);
       iter->metrics.begin_ts = std::chrono::steady_clock::now();
+      iter->workload_delay = std::chrono::nanoseconds{simulated_workload_delay_nanos};
 
       if (so_rcvbuf > 0)
       {

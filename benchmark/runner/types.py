@@ -6,16 +6,17 @@ from typing import Any, Callable, Dict, List, Optional, Sequence
 @dc.dataclass
 class FixedParams:
     address: str = "0.0.0.0:19004"
+    so_rcvbuf_size: str = None
+    so_sndbuf_size: str = None
     # sender
     duration_sec: int = 10
     msg_size: int = 32
     senders: int = 1
     msgs_per_sec: int = 0  # 0 = as fast as possible
     conns: int = 1
-    conns: int = 0 
     drain: bool = False
     nodelay: bool = False
-    max_send_batch_size: int = 0 # use default
+    max_send_size: int = 0 # use default
     # Client senders: comma-separated list mapping to sender indices
     sender_cpus: Optional[str] = None
     
@@ -36,12 +37,11 @@ class FixedParams:
     busy_spin: bool = False
     echo: str = "none"  # none|per_op|per_msg
     buffer_size: int = 32
-    recv_so_rcvbuf: int = 0
-    send_so_sndbuf: int = 0
     collect_latency_every_n_samples: int = 0
     metric_hud_interval_secs: int = 0
     # Receiver workers: comma-separated list mapping to worker indices
     worker_cpus: Optional[str] = None
+    simulated_workload_delay_microsecs: float = 0.0
     bsd_read_limit: int = 0
     uring_buffer_count: int = 0
     uring_per_conn_buffer_pool: bool = False
@@ -66,7 +66,9 @@ class Scenario:
     title: Optional[str] = None
     fixed: FixedParams = dc.field(default_factory=FixedParams)
     var_key: str = "workers"
-    var_values: Sequence[int] = ()
+    # Optional: shorter alias for x-axis label when var_key is too long
+    var_key_label: Optional[str] = None
+    var_values: Sequence[float] = ()
     implementations: Sequence[str] = ()
     # mode: 'receiver' (default) runs receiver+client; 'pingpong' runs pingpong acceptor+initiator
     mode: str = "receiver"

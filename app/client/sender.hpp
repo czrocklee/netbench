@@ -20,11 +20,12 @@ public:
     std::size_t msg_size;
     bool nodelay = false;
     bool drain = false;
-    int socket_buffer_size = 0;
+    int socket_recv_buffer_size = 0;
+    int socket_send_buffer_size = 0;
     int msgs_per_sec = 0;
     std::uint64_t stop_after_n_messages = 0;
     std::uint64_t stop_after_n_seconds = 0;
-    std::size_t max_batch_size = IOV_MAX;
+    std::size_t max_send_size_bytes = 0; // 0 => default to one bundle (IOV_MAX * msg_size)
   };
 
   sender(int id, config const& cfg);
@@ -39,7 +40,7 @@ public:
 private:
   void run();
 
-  const config cfg_;
+  config const cfg_;
   std::vector<connection> conns_;
   std::atomic<bool> stop_flag_ = false;
   std::jthread _thread;

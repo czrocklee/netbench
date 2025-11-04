@@ -42,6 +42,7 @@ public:
     int socket_recv_buffer_size;
     int socket_send_buffer_size;
     int collect_latency_every_n_samples;
+    std::chrono::nanoseconds simulated_workload_delay;
     bool shutdown_on_disconnect = false;
     std::atomic<int>* shutdown_counter = nullptr;
 #ifdef IO_URING_API

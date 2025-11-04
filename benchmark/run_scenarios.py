@@ -55,16 +55,20 @@ def default_scenarios() -> List[Scenario]:
     fixed = FixedParams(
         address=f"{get_default_ip_address()}:19004",
         duration_sec=30,
-        msg_size=32,
+        msg_size=64,
         senders=1,
         conns=1,
         busy_spin=False,
         echo="none",
         drain=False,
-        buffer_size=32,
-        max_send_batch_size=1024,
+        buffer_size=64,
         metric_hud_interval_secs=0,
         collect_latency_every_n_samples=0,
+        uring_buffer_count=32,
+        so_rcvbuf_size="4m",
+        so_sndbuf_size="4m",
+        max_send_size="4m",
+        bsd_read_limit = 64 * 1024, 
     )
     scs: List[Scenario] = [
         Scenario(
@@ -72,7 +76,7 @@ def default_scenarios() -> List[Scenario]:
             title="Receive Throughput vs Buffer Size",
             fixed=fixed,
             var_key="buffer_size",
-            var_values=[32, 128, 256, 512],
+            var_values=[64, 128, 256, 512, 1024],
             implementations=["bsd", "uring", "asio", "asio_uring"],
         ),
         Scenario(
@@ -80,41 +84,51 @@ def default_scenarios() -> List[Scenario]:
             title="Echo (per_op) Throughput vs Buffer Size",
             fixed=dc.replace(fixed, echo="per_op", drain=True),
             var_key="buffer_size",
-            var_values=[32, 128, 256, 512],
+            var_values=[64, 128, 256, 512, 1024],
             implementations=["bsd", "uring", "asio", "asio_uring"],
         ),
         Scenario(
             name="receive_throughput_by_connections",
             title="Receive Throughput vs Number of Connections",
             fixed=dc.replace(
-                fixed, 
-                bsd_read_limit = 32 * 1024, 
-                uring_buffer_count = 32768,
+                fixed,
+                buffer_size = 64,
                 uring_cq_entries = 32768
             ),
             var_key="conns",
-            var_values=[1, 16, 256, 1024],
+            var_values=[1, 2, 8, 64, 1024],
+            linkages={"uring_buffer_count": lambda params: min(int(params.conns * 32), 32768)},
             implementations=["bsd", "uring", "asio", "asio_uring"],
         ),
         Scenario(
             name="receive_throughput_by_threads",
-            title="Receive Throughput vs Threads",
-            fixed=fixed,
+            title="Receive Throughput vs Number of Threads",
+            fixed=dc.replace(fixed),
             var_key="workers",
-            var_values=[1, 2, 4, 8],
-            linkages={"conns": lambda params: int(params.workers)},
-            implementations=["bsd", "uring", "asio", "asio_uring", "asio_ioctx_mt"],
+            var_values=[1, 2, 3, 4, 8],
+            linkages={
+                "conns": lambda params: int(params.workers),
+                "senders": lambda params: 1 if params.workers <= 4 else 2,
+            },
+            implementations=["bsd", "uring", "asio", "asio_uring"],
+        ),
+        Scenario(
+            name="echo_throughput_by_workload",
+            title="Echo (per_op) Throughput vs Simulated Workload Delay",
+            fixed=dc.replace(fixed, echo="per_op", drain=True),           
+            var_key="simulated_workload_delay_microsecs",
+            var_key_label="delay_µs",
+            var_values=[0.5, 1, 5, 10, 100],
+            implementations=["bsd", "uring", "asio", "asio_uring"],
         ),
         Scenario(
             name="receive_latency_by_message_rate",
             title="Receive Latency vs Message Rate",
             fixed=dc.replace(fixed, nodelay=True),
             var_key="msgs_per_sec",
-            var_values=[1000, 10_000, 100_000, 1000_000],
+            var_values=[100, 1000, 10_000, 100_000, 1_000_000],
             linkages={
-                "collect_latency_every_n_samples": lambda params: max(
-                    int(params.msgs_per_sec) // 10_000, 1
-                )
+                "collect_latency_every_n_samples": lambda params: 1 if params.msgs_per_sec <= 10_000 else params.msgs_per_sec / 10_000,
             },
             implementations=["bsd", "uring", "asio", "asio_uring"],
         ),
@@ -122,7 +136,6 @@ def default_scenarios() -> List[Scenario]:
     # Add pingpong defaults: vary msgs_per_sec and msg_size
     pp_fixed = dc.replace(
         fixed,
-        metric_hud_interval_secs=0,
         warmup_count=10000,
         max_samples=0,
     )
@@ -132,7 +145,7 @@ def default_scenarios() -> List[Scenario]:
             title="Pingpong RTT vs Message Size",
             fixed=pp_fixed,
             var_key="msg_size",
-            var_values=[32, 128, 512, 2048],
+            var_values=[16, 64, 256, 1024, 4096],
             linkages={"buffer_size": lambda params: int(params.msg_size)},
             implementations=["bsd", "uring", "uring_sqpoll", "asio", "asio_uring"],
             mode="pingpong",

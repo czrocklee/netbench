@@ -80,6 +80,7 @@ in
       bmon
       clang-tools
       bpftrace
+      htop
 
       # python for benchmark scripts
       (python3.withPackages (ps: [

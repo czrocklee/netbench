@@ -21,7 +21,7 @@ namespace rasio
   class buffered_sender
   {
   public:
-    buffered_sender(::asio::io_context& io_ctx, std::size_t max_buf_size = 1024 * 1024 * 4)
+    buffered_sender(::asio::io_context& io_ctx, std::size_t max_buf_size = 1024 * 1024 * 64)
       : io_ctx_{io_ctx}, write_list_{max_buf_size}
     {
     }

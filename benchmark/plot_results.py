@@ -38,6 +38,20 @@ METRIC_PROPERTIES = {
     "ops_per_sec": {"label": "Ops per Second", "unit_family": "count"},
 }
 
+def _format_var_val(x: float) -> str:
+    """Format numeric var value to match directory names and keep labels tidy.
+
+    - Integers (e.g., 1.0) -> "1"
+    - Decimals -> compact form using %g (e.g., 0.5, 1.25)
+    """
+    try:
+        xf = float(x)
+        if xf.is_integer():
+            return str(int(xf))
+        return ("%g" % xf)
+    except Exception:
+        return str(x)
+
 def _get_scale_and_unit(metric_name: str, max_val: float) -> Tuple[float, str]:
     family = METRIC_PROPERTIES.get(metric_name, {}).get("unit_family", "count")
     if family == "bytes":
@@ -143,7 +157,7 @@ class RunPoint:
     scenario: str
     impl: str
     var_key: str
-    var_val: int
+    var_val: float
     bytes_total: int
     msgs_total: int
     ops_total: int
@@ -198,34 +212,36 @@ def load_metrics(metrics_path: Path) -> Tuple[int, int, int, Optional[int], Opti
     return total_bytes, total_msgs, total_ops, begin_min, end_max
 
 
-def infer_var_from_dir(name: str) -> Tuple[str, int]:
-    # pattern like workers_4 or msg_size_1024
-    m = re.match(r"([a-zA-Z0-9_]+)_([0-9]+)$", name)
+def infer_var_from_dir(name: str) -> Tuple[str, float]:
+    # pattern like workers_4, msg_size_1024, or delay_0.5
+    m = re.match(r"([a-zA-Z0-9_]+)_([0-9]+(?:\.[0-9]+)?)$", name)
     if not m:
         raise ValueError(f"Cannot infer var from directory name: {name}")
-    return m.group(1), int(m.group(2))
+    return m.group(1), float(m.group(2))
 
 
 def gather_results(results_dir: Path, scenario_filter: Optional[List[str]] = None,
                    impl_filter: Optional[List[str]] = None,
                    single_run_dir: Optional[Path] = None) -> Tuple[
-                       Dict[str, Dict[int, Dict[str, RunPoint]]],  # run_dir_name -> var_val -> impl -> RunPoint
-                       Dict[str, List[int]],                       # run_dir_name -> var order
+                       Dict[str, Dict[float, Dict[str, RunPoint]]],  # run_dir_name -> var_val -> impl -> RunPoint
+                       Dict[str, List[float]],                       # run_dir_name -> var order
                        Dict[str, str],                             # run_dir_name -> subtitle
                        Dict[str, str],                             # run_dir_name -> title
                        Dict[str, Path],                            # run_dir_name -> run_dir path
-                       Dict[str, List[str]]                        # run_dir_name -> preferred impl order from scenario.json
+                       Dict[str, List[str]],                       # run_dir_name -> preferred impl order from scenario.json
+                       Dict[str, Optional[str]]                    # run_dir_name -> var_key_label alias (optional)
                    ]:
     # Returns:
     #  - scenarios -> var_val -> impl -> RunPoint
     #  - scenarios -> sorted var values
     #  - scenarios -> subtitle (e.g., "CPU | kernel")
-    scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]] = {}
-    var_order: Dict[str, List[int]] = {}
+    scenarios: Dict[str, Dict[float, Dict[str, RunPoint]]] = {}
+    var_order: Dict[str, List[float]] = {}
     subtitles: Dict[str, str] = {}
     titles: Dict[str, str] = {}
     run_dir_paths: Dict[str, Path] = {}
     impl_orders: Dict[str, List[str]] = {}
+    var_key_labels: Dict[str, Optional[str]] = {}
 
     run_dirs: List[Path]
     if single_run_dir is not None:
@@ -252,8 +268,10 @@ def gather_results(results_dir: Path, scenario_filter: Optional[List[str]] = Non
         if scenario_filter and sc_name not in scenario_filter and scenario_key not in scenario_filter:
             continue
         var_key = scj.get("var_key")
+        # optional alias for x-axis label
+        var_key_labels[scenario_key] = scj.get("var_key_label")
         expected_vars = scj.get("var_values", [])
-        expected_vals = [int(v) for v in expected_vars]
+        expected_vals = [float(v) for v in expected_vars]
         scenarios.setdefault(scenario_key, {})
         if scenario_key not in var_order:
             var_order[scenario_key] = expected_vals or []
@@ -322,10 +340,10 @@ def gather_results(results_dir: Path, scenario_filter: Optional[List[str]] = Non
     for sk, vmap in scenarios.items():
         if not var_order.get(sk):
             var_order[sk] = sorted(vmap.keys())
-    return scenarios, var_order, subtitles, titles, run_dir_paths, impl_orders
+    return scenarios, var_order, subtitles, titles, run_dir_paths, impl_orders, var_key_labels
 
 
-def _find_var_key(vmap: Dict[int, Dict[str, RunPoint]]) -> Optional[str]:
+def _find_var_key(vmap: Dict[float, Dict[str, RunPoint]]) -> Optional[str]:
     try:
         if vmap:
             any_impl_map = next(iter(vmap.values()))
@@ -426,9 +444,10 @@ def _aggregate_percentiles_merged(var_dir: Path, requested: List[float]) -> Opti
     return values if values else None
 
 
-def plot_latency_percentiles(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_order: Dict[str, List[int]],
+def plot_latency_percentiles(scenarios: Dict[str, Dict[float, Dict[str, RunPoint]]], var_order: Dict[str, List[float]],
                              scenario_subtitles: Dict[str, str], scenario_titles: Dict[str, str],
                              scenario_impl_orders: Dict[str, List[str]],
+                             scenario_var_labels: Dict[str, Optional[str]],
                              run_dir_paths: Dict[str, Path], percentiles: Optional[List[float]] = None,
                              debug_layout: bool = False, hide_title: bool = False) -> List[Path]:
     import matplotlib.pyplot as plt
@@ -443,13 +462,14 @@ def plot_latency_percentiles(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]
             continue  # Skip if no impl order is defined for this scenario
         x_values = var_order.get(sc_name, sorted(vmap.keys()))
         var_key_name = _find_var_key(vmap) or "var"
+        var_label = scenario_var_labels.get(sc_name) or var_key_name
         sc_dir = run_dir_paths[sc_name]
 
         # Prepare data: for each impl, for each x, merge workers' histograms and compute percentiles
-        data: Dict[str, Dict[int, Dict[float, float]]] = {impl: {} for impl in impl_order}
+        data: Dict[str, Dict[float, Dict[float, float]]] = {impl: {} for impl in impl_order}
         for impl in impl_order:
             for x in x_values:
-                var_dir = sc_dir / impl / f"{var_key_name}_{x}"
+                var_dir = sc_dir / impl / f"{var_key_name}_{_format_var_val(x)}"
                 agg = _aggregate_percentiles_merged(var_dir, percentiles)
                 if agg:
                     data[impl][x] = agg
@@ -470,7 +490,7 @@ def plot_latency_percentiles(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]
                 plotted_any = True
 
             ax.set_xticks(centers)
-            ax.set_xticklabels([f"{var_key_name} = {x}" for x in x_values])
+            ax.set_xticklabels([f"{var_label} = {_format_var_val(x)}" for x in x_values])
             ax.set_ylabel(f"Latency at p{p} (us)")
             subtitle = scenario_subtitles.get(sc_name)
             try:
@@ -508,9 +528,10 @@ def plot_latency_percentiles(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]
     return out_files
 
 
-def plot_matplotlib(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_order: Dict[str, List[int]],
+def plot_matplotlib(scenarios: Dict[str, Dict[float, Dict[str, RunPoint]]], var_order: Dict[str, List[float]],
                     scenario_subtitles: Dict[str, str], scenario_titles: Dict[str, str],
                     scenario_impl_orders: Dict[str, List[str]],
+                    scenario_var_labels: Dict[str, Optional[str]],
                     metric_y1: str, metric_y2: Optional[str], y2_mode: str,
                     run_dir_paths: Dict[str, Path], baseline_impl: Optional[str] = None, debug_layout: bool = False,
                     hide_title: bool = False) -> List[Path]:
@@ -596,8 +617,9 @@ def plot_matplotlib(scenarios: Dict[str, Dict[int, Dict[str, RunPoint]]], var_or
                     var_key_name = any_rp.var_key
         except Exception:
             pass
+        var_label = scenario_var_labels.get(sc_name) or var_key_name
         ax1.set_xticks(centers)
-        ax1.set_xticklabels([f"{var_key_name} = {x}" for x in x_values])
+        ax1.set_xticklabels([f"{var_label} = {_format_var_val(x)}" for x in x_values])
 
         y_label = METRIC_PROPERTIES.get(metric_y1, {}).get("label", metric_y1)
         if unit:
@@ -750,7 +772,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--no-title", action="store_true", help="Hide the main title on plots")
     args = ap.parse_args(argv)
 
-    scenarios, var_order, scenario_subtitles, scenario_titles, run_dir_paths, scenario_impl_orders = gather_results(
+    scenarios, var_order, scenario_subtitles, scenario_titles, run_dir_paths, scenario_impl_orders, scenario_var_labels = gather_results(
         args.results_dir, args.scenario, args.impl, single_run_dir=args.run_dir)
     if not scenarios:
         print(f"No results found under {args.results_dir}")
@@ -786,10 +808,10 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     baseline_impl = None if (args.relative_to and args.relative_to.lower() == 'none') else args.relative_to
     metric_y2 = None if (args.metric_y2 and args.metric_y2.lower() == 'none') else args.metric_y2
-    files = plot_matplotlib(scenarios, var_order, scenario_subtitles, scenario_titles, scenario_impl_orders, args.metric_y1, metric_y2, args.y2_mode,
+    files = plot_matplotlib(scenarios, var_order, scenario_subtitles, scenario_titles, scenario_impl_orders, scenario_var_labels, args.metric_y1, metric_y2, args.y2_mode,
                             run_dir_paths, baseline_impl=baseline_impl, debug_layout=args.debug_layout, hide_title=args.no_title)
     # Also generate latency percentile plots if .hdr or percentile CSV files exist
-    lat_files = plot_latency_percentiles(scenarios, var_order, scenario_subtitles, scenario_titles, scenario_impl_orders, run_dir_paths,
+    lat_files = plot_latency_percentiles(scenarios, var_order, scenario_subtitles, scenario_titles, scenario_impl_orders, scenario_var_labels, run_dir_paths,
                                          percentiles=[50.0, 90.0, 99.0, 99.9, 99.99], debug_layout=args.debug_layout, hide_title=args.no_title)
     files.extend(lat_files)
     # Sort files by parent directory creation time in descending order

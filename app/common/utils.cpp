@@ -16,6 +16,7 @@
 #include <stdexcept>
 #include <csignal>
 #include <fstream>
+#include <chrono>
 
 void parse_address(std::string const& full_address, std::string& host, std::string& port)
 {
@@ -154,4 +155,15 @@ void dump_metrics(std::filesystem::path const& dir, std::vector<metric const*> c
   auto ofs = std::ofstream{metrics_path};
   ofs << j.dump(2) << std::endl;
   std::cout << "Metrics written to " << metrics_path << std::endl;
+}
+
+void busy_wait(std::chrono::nanoseconds interval)
+{
+  auto const start = std::chrono::steady_clock::now();
+  auto const end = start + interval;
+
+  do
+  {
+    asm volatile("");
+  } while (std::chrono::steady_clock::now() < end);
 }

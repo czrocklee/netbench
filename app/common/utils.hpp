@@ -25,3 +25,5 @@ void dump_run_metadata(
   std::vector<std::string> const& tags);
 
 void dump_metrics(std::filesystem::path const& path, std::vector<metric const*> const& metrics);
+
+void busy_wait(std::chrono::nanoseconds interval);

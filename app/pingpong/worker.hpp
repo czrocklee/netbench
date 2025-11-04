@@ -33,6 +33,7 @@ public:
     std::uint32_t sq_entries;
     std::uint16_t buffer_count;
     ::io_uring_params params{};
+    bool zerocopy = false;
 #endif
   };
 

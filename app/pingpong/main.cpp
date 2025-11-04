@@ -71,6 +71,9 @@ int main(int argc, char** argv)
   bool enable_sqpoll = true;
   app.add_flag("--sqpoll,!--no-sqpoll", enable_sqpoll, "Enable io_uring SQPOLL mode (default: on)");
 
+  // Enable io_uring zerocopy sends for pingpong replies and initiator sends
+  app.add_flag("--zerocopy", cfg.zerocopy, "Enable io_uring MSG_ZEROCOPY for sends (uring only)");
+
   int sqpoll_cpu_affinity;
   app.add_option("-k,--sqpoll-cpu-id", sqpoll_cpu_affinity, "cpu affinity for the kernel polling thread")
     ->default_val(-1);

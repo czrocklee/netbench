@@ -39,8 +39,6 @@ namespace bsd
 
     auto const* data_ptr = static_cast<std::byte const*>(data);
     write_list_.insert(write_list_.end(), data_ptr + bytes_sent, data_ptr + size);
-    std::cout << "buffered_sender: added " << bytes_remain
-              << " bytes to the buffer, total size now: " << write_list_.size() << std::endl;
 
     if (is_empty)
     {

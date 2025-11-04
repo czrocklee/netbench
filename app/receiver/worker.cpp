@@ -248,6 +248,11 @@ void worker::on_data(connection& conn, ::asio::const_buffer const data)
 
 void worker::on_new_message(connection& conn, void const* buffer)
 {
+  if (config_.simulated_workload_delay.count() > 0)
+  {
+    busy_wait(config_.simulated_workload_delay);
+  }
+
   ++metrics_.msgs;
 
   if (config_.collect_latency_every_n_samples > 0 && metrics_.msgs % config_.collect_latency_every_n_samples == 0)
