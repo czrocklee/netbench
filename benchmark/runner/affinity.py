@@ -78,27 +78,59 @@ def choose_cpus(n: int, exclude: Optional[Set[int]] = None) -> List[int]:
     if not avail:
         return []
     groups = _thread_sibling_groups(avail)
-    groups_nonzero = [g for g in groups if g and g[0] != 0]
-    group_zero = next((g for g in groups if g and g[0] == 0), None)
+
+    def _full_siblings(cpu: int) -> List[int]:
+        base = "/sys/devices/system/cpu"
+        path = os.path.join(base, f"cpu{cpu}", "topology", "thread_siblings_list")
+        try:
+            with open(path, "r") as f:
+                spec = f.read().strip()
+            return sorted(_parse_cpulist_spec(spec))
+        except Exception:
+            return [cpu]
+
+    # Build a structure mapping each available group to its core-primary (from full sysfs, not filtered by avail)
+    core_groups = []  # list of tuples: (core_primary:int, available_members:List[int])
+    seen_cores: Set[int] = set()
+    for g in groups:
+        if not g:
+            continue
+        full = _full_siblings(g[0])
+        primary = min(full) if full else g[0]
+        core_id_key = tuple(full)
+        if primary in seen_cores:
+            continue
+        seen_cores.add(primary)
+        # available members are intersection with 'avail', but preserve order: primary first if available
+        avail_members = [c for c in full if c in avail]
+        if not avail_members:
+            continue
+        core_groups.append((primary, avail_members))
+
+    # Sort core groups by their primary id
+    core_groups.sort(key=lambda t: t[0])
 
     order: List[int] = []
-    # 1) Take primaries of non-zero cores first
-    for g in groups_nonzero:
-        if len(order) >= n:
-            break
-        order.append(g[0])
+    # 1) Take primaries of non-zero cores first, but only if that primary CPU id is available
+    for primary, avail_members in core_groups:
+        if primary == 0:
+            continue
+        if primary in avail and len(order) < n:
+            order.append(primary)
 
-    # 2) If still need more, and CPU 0 is available, take it BEFORE any SMT siblings
-    if len(order) < n and group_zero and 0 in avail:
-        order.append(0)
+    # 2) If still need more, and CPU 0 primary is available, take it BEFORE any SMT siblings
+    if len(order) < n:
+        for primary, avail_members in core_groups:
+            if primary == 0 and 0 in avail:
+                order.append(0)
+                break
 
     # 3) If still need more, start adding SMT siblings from all groups (including zero's siblings)
     if len(order) < n:
-        for g in groups:
-            if not g:
-                continue
-            # Skip primary; start from siblings
-            for c in g[1:]:
+        for primary, avail_members in core_groups:
+            # iterate members skipping primary (even if unavailable, list is in full order primary first)
+            start_idx = 1 if (avail_members and avail_members[0] == primary) else 0
+            for c in avail_members[start_idx:]:
                 if len(order) >= n:
                     break
                 if c not in order and c in avail:
