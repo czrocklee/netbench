@@ -63,7 +63,14 @@ def _thread_sibling_groups(avail: Set[int]) -> List[List[int]]:
 
 
 def choose_cpus(n: int, exclude: Optional[Set[int]] = None) -> List[int]:
-    """Choose up to n CPUs prioritizing one hardware thread per core first. with optional exclusion set."""
+    """Choose up to n CPUs per policy:
+    - Prefer one hardware thread per physical core first (no SMT sharing).
+    - Avoid CPU 0 for primaries when possible.
+    - If we'd otherwise have to start using SMT siblings, prefer taking CPU 0 next.
+    - Only then, start allocating SMT siblings (second thread per core).
+
+    The optional 'exclude' set removes CPUs from consideration upfront.
+    """
     avail_list = _available_cpus()
     avail: Set[int] = set(avail_list)
     if exclude:
@@ -72,29 +79,31 @@ def choose_cpus(n: int, exclude: Optional[Set[int]] = None) -> List[int]:
         return []
     groups = _thread_sibling_groups(avail)
     groups_nonzero = [g for g in groups if g and g[0] != 0]
-    groups_zero = [g for g in groups if g and g[0] == 0]
-    ordered_groups = groups_nonzero + groups_zero
+    group_zero = next((g for g in groups if g and g[0] == 0), None)
 
     order: List[int] = []
-    for g in ordered_groups:
-        if not g:
-            continue
-        c = g[0]
-        if c == 0 and len(groups_zero) == 1:
-            continue
+    # 1) Take primaries of non-zero cores first
+    for g in groups_nonzero:
         if len(order) >= n:
             break
-        order.append(c)
+        order.append(g[0])
+
+    # 2) If still need more, and CPU 0 is available, take it BEFORE any SMT siblings
+    if len(order) < n and group_zero and 0 in avail:
+        order.append(0)
+
+    # 3) If still need more, start adding SMT siblings from all groups (including zero's siblings)
     if len(order) < n:
-        for g in ordered_groups:
+        for g in groups:
+            if not g:
+                continue
+            # Skip primary; start from siblings
             for c in g[1:]:
-                if c == 0:
-                    continue
                 if len(order) >= n:
                     break
-                order.append(c)
+                if c not in order and c in avail:
+                    order.append(c)
             if len(order) >= n:
                 break
-    if len(order) < n and 0 in avail:
-        order.append(0)
+
     return order[:n]
