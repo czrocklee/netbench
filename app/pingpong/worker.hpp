@@ -63,9 +63,12 @@ private:
     std::size_t msg_size = 0;
     std::uint64_t send_ts = 0;
     std::uint64_t msg_cnt = 0;
+    std::unique_ptr<std::byte[]> partial_buffer;
+    std::size_t partial_buffer_size = 0;
   };
 
   void on_data(connection& conn, ::asio::const_buffer const data);
+  void on_message(connection& conn, void const* buffer);
 
   config config_;
   net::io_context io_ctx_;

@@ -3,6 +3,7 @@
 
 #include <asio/ip/tcp.hpp>
 #include <iostream>
+#include <cstring>
 
 worker::worker(config cfg)
   : config_{std::move(cfg)},
@@ -44,6 +45,7 @@ void worker::add_connection(net::socket sock, std::size_t msg_size)
     auto iter = connections_.emplace(connections_.begin(), io_ctx_, config_.buffer_size);
 #endif
     iter->msg_size = msg_size;
+    iter->partial_buffer = std::make_unique<std::byte[]>(iter->msg_size);
 
     sock.non_blocking(true);
 
@@ -54,7 +56,7 @@ void worker::add_connection(net::socket sock, std::size_t msg_size)
 
     if (config_.socket_send_buffer_size > 0)
     {
-      sock.set_option(::asio::socket_base::send_buffer_size{config_.socket_send_buffer_size}); 
+      sock.set_option(::asio::socket_base::send_buffer_size{config_.socket_send_buffer_size});
     }
 
     sock.set_option(::asio::ip::tcp::no_delay{true});
@@ -63,8 +65,7 @@ void worker::add_connection(net::socket sock, std::size_t msg_size)
     // Open sender; for io_uring, enable zerocopy if configured
 #ifdef IO_URING_API
     iter->sender.open(
-      iter->receiver.get_socket(),
-      config_.zerocopy ? uring::sender::flags::zerocopy : uring::sender::flags::none);
+      iter->receiver.get_socket(), config_.zerocopy ? uring::sender::flags::zerocopy : uring::sender::flags::none);
 #else
     iter->sender.open(iter->receiver.get_socket());
 #endif
@@ -92,21 +93,52 @@ void worker::add_connection(net::socket sock, std::size_t msg_size)
 
 void worker::on_data(connection& conn, ::asio::const_buffer const data)
 {
-  if (data.size() != conn.msg_size)
+  auto data_left = data;
+
+  // Reconstruct message boundaries exactly like receiver: accumulate into a flat buffer when needed
+  if (conn.partial_buffer_size > 0)
   {
-    std::cerr << "Partial read in pingpong test, not tolerable \n";
-    std::terminate();
+    auto addr = reinterpret_cast<std::byte const*>(data_left.data());
+    auto size = std::min(conn.msg_size - conn.partial_buffer_size, data_left.size());
+    std::memcpy(conn.partial_buffer.get() + conn.partial_buffer_size, addr, size);
+    conn.partial_buffer_size += size;
+
+    if (conn.partial_buffer_size == conn.msg_size)
+    {
+      on_message(conn, conn.partial_buffer.get());
+      conn.partial_buffer_size = 0;
+    }
+
+    data_left += size;
   }
 
+  while (data_left.size() > 0)
+  {
+    auto addr = reinterpret_cast<std::byte const*>(data_left.data());
+
+    if (data_left.size() < conn.msg_size)
+    {
+      std::memcpy(conn.partial_buffer.get(), addr, data_left.size());
+      conn.partial_buffer_size = data_left.size();
+      break;
+    }
+
+    on_message(conn, addr);
+    data_left += conn.msg_size;
+  }
+}
+
+void worker::on_message(connection& conn, void const* buffer)
+{
+  // Initiator side: send_ts>0 means we previously sent a ping; compute RTT, then send next ping
+  // Acceptor side: first message arrives with send_ts==0; echo back to keep pingpong running
   if (conn.send_ts > 0)
   {
-    auto now = utility::nanos_since_epoch();
-    auto send_ts = conn.send_ts;
-    conn.send(data, utility::nanos_since_epoch());
+    auto const now = utility::nanos_since_epoch();
+    auto const prev_send_ts = conn.send_ts;
+    conn.send(::asio::buffer(buffer, conn.msg_size), utility::nanos_since_epoch());
 
-    // std::cout << conn.msg_cnt << std::endl;
-
-    if (++conn.msg_cnt > config_.warmup_count && !sample_queue_.push({.send_ts = send_ts, .recv_ts = now}))
+    if (++conn.msg_cnt > config_.warmup_count && !sample_queue_.push({.send_ts = prev_send_ts, .recv_ts = now}))
     {
       std::cerr << "Failed to produce latency sample due to queue full\n";
       std::terminate();
@@ -114,7 +146,7 @@ void worker::on_data(connection& conn, ::asio::const_buffer const data)
   }
   else
   {
-    conn.send(data, 0);
+    conn.send(::asio::buffer(buffer, conn.msg_size), 0);
   }
 }
 
