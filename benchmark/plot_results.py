@@ -17,6 +17,16 @@ import json
 import math
 import re
 from dataclasses import dataclass
+import os
+
+# Default to a headless Matplotlib backend for CLI plotting; users can override via MPLBACKEND
+try:
+    import matplotlib  # type: ignore
+    if os.environ.get("MPLBACKEND") in (None, ""):
+        matplotlib.use("Agg", force=True)
+except Exception:
+    # If anything goes wrong, proceed; the functions import pyplot lazily and may still work in GUI envs
+    pass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -577,7 +587,7 @@ def plot_matplotlib(scenarios: Dict[str, Dict[float, Dict[str, RunPoint]]], var_
                     y_max = max(y_max, v)
         scale, unit = _get_scale_and_unit(metric_y1, y_max)
 
-        fig, ax1 = plt.subplots(figsize=(max(6, n_groups * 2.0), 4))
+        fig, ax1 = plt.subplots(figsize=(max(10, n_groups * 2.0), 4))
         base_positions = list(range(n_groups))
 
         # Plot bars for Y1 metric

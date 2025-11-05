@@ -98,6 +98,7 @@ private:
 #endif
   metric metrics_{};
   std::list<connection> connections_;
+  std::size_t closed_conns_ = 0;
   boost::lockfree::spsc_queue<std::move_only_function<void()>> pending_task_queue_;
   std::thread thread_;
 };

@@ -18,7 +18,7 @@ if __package__ is None or __package__ == "":
     _REPO_ROOT = Path(__file__).resolve().parents[1]
     if str(_REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(_REPO_ROOT))
-    from benchmark.runner.constants import RECEIVER_BIN_NAME
+    from benchmark.runner.constants import RECEIVER_BIN_NAME, PINGPONG_BIN_NAME
     from benchmark.runner.types import FixedParams, Scenario
     from benchmark.runner.exec import run_from_args
 
@@ -96,7 +96,7 @@ def default_scenarios() -> List[Scenario]:
                 uring_cq_entries = 32768
             ),
             var_key="conns",
-            var_values=[1, 2, 8, 64, 1024],
+            var_values=[1, 8, 32, 128, 512],
             linkages={"uring_buffer_count": lambda params: min(int(params.conns * 32), 32768)},
             implementations=["bsd", "uring", "asio", "asio_uring"],
         ),
@@ -147,7 +147,7 @@ def default_scenarios() -> List[Scenario]:
             var_key="msg_size",
             var_values=[16, 64, 256, 1024, 4096],
             linkages={"buffer_size": lambda params: int(params.msg_size)},
-            implementations=["bsd", "uring", "uring_sqpoll", "asio", "asio_uring"],
+            implementations=["bsd", "uring", "uring_sqpoll", "uring_sqpoll_zc", "asio", "asio_uring"],
             mode="pingpong",
         ),
     ]
@@ -165,7 +165,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     p.add_argument("--out", type=Path, default=REPO_ROOT / "results")
     p.add_argument("--scenario", action="append",
                    help="Scenario(s) to run; filter by scenario name")
-    p.add_argument("--impl", action="append", choices=list(RECEIVER_BIN_NAME.keys()),
+    p.add_argument("--impl", action="append", choices=list(RECEIVER_BIN_NAME.keys() | PINGPONG_BIN_NAME.keys()),
                    help="Limit implementations")
     p.add_argument("--impl-arg", action="append", default=[],
                    help="Extra receiver arg for impl, format impl=token (repeatable). "

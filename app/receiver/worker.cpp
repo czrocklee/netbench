@@ -144,10 +144,17 @@ void worker::add_connection(net::socket sock)
       {
         metrics_.end_ts = std::chrono::steady_clock::now();
 
+        if (config_.shutdown_on_disconnect && ++closed_conns_ == connections_.size())
+        {
+          config_.shutdown_counter->fetch_sub(1);
+          stop_flag_.store(true, std::memory_order::relaxed);
+          return;
+        }
+
         post([this, iter] {
           connections_.erase(iter);
 
-          if (config_.shutdown_on_disconnect && connections_.empty())
+          if (connections_.empty())
           {
             config_.shutdown_counter->fetch_sub(1);
             stop_flag_.store(true, std::memory_order::relaxed);
