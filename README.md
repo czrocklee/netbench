@@ -23,29 +23,75 @@
    ```
    This command provides all required dependencies and tools.
 
-3. **Configure the build:**
+3. **Configure with CMake presets (recommended):**
    ```sh
-   cmake -B build -G Ninja
+   cmake --preset=release
    ```
-   - To enable spdlog logging:
-     ```sh
-     cmake -B build -G Ninja -DSPDLOG_LOGGER=ON
-     ```
-   - To enable stderr logging:
-     ```sh
-     cmake -B build -G Ninja -DSTDERR_LOGGER=ON
-     ```
 
-4. **Build the project:**
+4. **Build using the preset:**
    ```sh
-   cmake --build build
+   cmake --build --preset=release
    ```
+
+This produces binaries under `build/release/app/`.
 
 ### Notes
 
-- You can use CMake presets or VS Code CMake Tools for advanced configuration.
+- CMake presets are provided in `CMakePresets.json` (e.g., `debug`, `release`).
 - For io_uring support, ensure your system has a recent Linux kernel; the Nix shell provides the necessary development headers.
 - For custom logger backends, see `lib/utility/logger.hpp`.
+
+## BENCHMARK
+
+This repository includes a simple scenario runner to automate local (or remote) end-to-end tests and plotting.
+
+- Entrypoint: `benchmark/run_scenarios.py`
+- Output: artifacts under `results/<scenario_timestamp>/...` and optional plots
+
+Quick start (local machine):
+
+```sh
+# From repo root, after building (binaries at build/release/app)
+python3 benchmark/run_scenarios.py --auto-plot
+```
+
+Common, minimal examples:
+
+- Run a single scenario and auto-plot:
+   ```sh
+   python3 benchmark/run_scenarios.py \
+      --scenario receive_throughput_by_buffer_size \
+      --auto-plot
+   ```
+
+- Limit implementations (e.g., BSD and io_uring only):
+   ```sh
+   python3 benchmark/run_scenarios.py \
+      --scenario echo_throughput_by_buffer_size \
+      --impl bsd --impl uring \
+      --auto-plot
+   ```
+
+- Override a few fixed parameters (no need to enumerate all options):
+   ```sh
+   python3 benchmark/run_scenarios.py \
+      --scenario receive_latency_by_message_rate \
+      --fixed duration_sec=15 --fixed msg_size=64 \
+      --auto-plot
+   ```
+
+- Ping-pong RTT example:
+   ```sh
+   python3 benchmark/run_scenarios.py \
+      --scenario pingpong_latency_by_msg_size \
+      --impl uring_sqpoll_zc \
+      --auto-plot
+   ```
+
+Notes:
+- By default, binaries are discovered under `build/release/app`. You can override with `--app-root` if needed.
+- Results and plots are written to `results/` by default. Use your image viewer or open the printed file:// URLs.
+- For convenience on multi-core machines, add `--auto-cpu-ids` to let the runner pick non-overlapping CPU affinities.
 
 ## TOOLING
 

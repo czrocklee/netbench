@@ -1,6 +1,5 @@
 // Use GNU extensions for CLOCK_MONOTONIC_RAW and sched_* APIs when available
 #define _GNU_SOURCE
-#define _POSIX_C_SOURCE 199309L
 #include <stdio.h>
 #include <stdint.h>
 #include <time.h>
